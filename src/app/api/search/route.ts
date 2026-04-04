@@ -23,10 +23,27 @@ interface OverpassElement {
   tags?: Record<string, string>;
 }
 
-function buildOverpassQuery(stateName: string): string {
-  // Search entire state for pet stores
-  return `[out:json][timeout:90];
-area["name"="${stateName}"]["admin_level"="4"]["boundary"="administrative"]->.searchArea;
+function buildOverpassQuery(city: string, state: string): string {
+  const areaFilter = state
+    ? `area["name"="${city}"]["is_in:state"~"${state}",i]->.searchArea;`
+    : `area["name"="${city}"]->.searchArea;`;
+
+  return `[out:json][timeout:30];
+${areaFilter}
+(
+  node["shop"="pet"](area.searchArea);
+  way["shop"="pet"](area.searchArea);
+  node["shop"="pet;grooming"](area.searchArea);
+  way["shop"="pet;grooming"](area.searchArea);
+  node["shop"="pet_food"](area.searchArea);
+  way["shop"="pet_food"](area.searchArea);
+);
+out body center;`;
+}
+
+function buildOverpassQueryFallback(city: string): string {
+  return `[out:json][timeout:30];
+area["name"="${city}"]->.searchArea;
 (
   node["shop"="pet"](area.searchArea);
   way["shop"="pet"](area.searchArea);
@@ -40,25 +57,37 @@ out body center;`;
 
 export async function GET(request: NextRequest) {
   const searchParams = request.nextUrl.searchParams;
+  const city = searchParams.get("city")?.trim();
   const state = searchParams.get("state")?.trim();
 
-  if (!state) {
+  if (!city) {
     return NextResponse.json(
-      { error: "State is required" },
+      { error: "City is required" },
       { status: 400 }
     );
   }
 
   try {
-    const query = buildOverpassQuery(state);
+    const query = state
+      ? buildOverpassQuery(city, state)
+      : buildOverpassQueryFallback(city);
 
-    const res = await fetch(OVERPASS_URL, {
+    let res = await fetch(OVERPASS_URL, {
       method: "POST",
       headers: { "Content-Type": "application/x-www-form-urlencoded" },
       body: `data=${encodeURIComponent(query)}`,
     });
 
-    const data = await res.json();
+    let data = await res.json();
+    if (state && (!data.elements || data.elements.length === 0)) {
+      const fallbackQuery = buildOverpassQueryFallback(city);
+      res = await fetch(OVERPASS_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: `data=${encodeURIComponent(fallbackQuery)}`,
+      });
+      data = await res.json();
+    }
 
     if (!res.ok) {
       return NextResponse.json(
@@ -81,8 +110,8 @@ export async function GET(request: NextRequest) {
           address: [tags["addr:housenumber"], tags["addr:street"]]
             .filter(Boolean)
             .join(" ") || "",
-          city: tags["addr:city"] || "",
-          state: tags["addr:state"] || state,
+          city: tags["addr:city"] || city,
+          state: tags["addr:state"] || state || "",
           zip: tags["addr:postcode"] || "",
           phone: tags.phone || tags["contact:phone"] || null,
           website: tags.website || tags["contact:website"] || null,

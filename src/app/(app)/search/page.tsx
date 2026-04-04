@@ -3,11 +3,13 @@
 import { useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 import { AddStoreDialog, type StoreFormData } from "@/components/add-store-dialog";
 import {
   Search,
   Loader2,
   Plus,
+  MapPin,
   Globe,
   Phone,
   Import,
@@ -53,6 +55,7 @@ const STATE_NAMES: Record<string, string> = {
 };
 
 export default function SearchPage() {
+  const [city, setCity] = useState("");
   const [state, setState] = useState("");
   const [results, setResults] = useState<SearchResult[]>([]);
   const [loading, setLoading] = useState(false);
@@ -61,15 +64,20 @@ export default function SearchPage() {
   const [importedIds, setImportedIds] = useState<Set<string>>(new Set());
   const [importing, setImporting] = useState<string | null>(null);
 
+  function hasContactInfo(store: SearchResult): boolean {
+    return !!(store.phone || store.email || store.website);
+  }
+
   async function handleSearch(e: React.FormEvent) {
     e.preventDefault();
-    if (!state) return;
+    if (!city) return;
     setLoading(true);
     setError("");
     setResults([]);
 
     try {
-      const params = new URLSearchParams({ state: STATE_NAMES[state] || state });
+      const params = new URLSearchParams({ city });
+      if (state) params.set("state", STATE_NAMES[state] || state);
 
       const res = await fetch(`/api/search?${params}`);
       const data = await res.json();
@@ -79,7 +87,7 @@ export default function SearchPage() {
         setResults(data.stores || []);
         if (data.stores?.length === 0) {
           setError(
-            `No independent pet stores found in ${STATE_NAMES[state] || state}. Try another state or add stores manually.`
+            `No independent pet stores found in ${city}${state ? `, ${state}` : ""}. Try a larger city or add stores manually.`
           );
         }
       }
@@ -126,7 +134,7 @@ export default function SearchPage() {
 
   async function handleImportAll() {
     for (const store of results) {
-      if (!importedIds.has(store.osmId)) {
+      if (!importedIds.has(store.osmId) && hasContactInfo(store)) {
         await handleImport(store);
       }
     }
@@ -151,7 +159,7 @@ export default function SearchPage() {
         <div>
           <h1 className="text-2xl font-bold">Find Pet Stores</h1>
           <p className="text-muted-foreground">
-            Search by state or add stores manually (excludes major chains)
+            Search by city &amp; state or add stores manually (excludes major chains)
           </p>
         </div>
         <Button variant="outline" onClick={() => setAddDialogOpen(true)}>
@@ -163,20 +171,29 @@ export default function SearchPage() {
       {/* Search Form */}
       <Card>
         <CardContent className="p-6">
-          <form onSubmit={handleSearch} className="flex gap-3 flex-wrap items-center">
+          <form onSubmit={handleSearch} className="flex gap-3 flex-wrap">
+            <div className="relative flex-1 min-w-[180px] max-w-xs">
+              <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+              <Input
+                placeholder="City (e.g. Denver)"
+                value={city}
+                onChange={(e) => setCity(e.target.value)}
+                className="pl-10"
+              />
+            </div>
             <select
               value={state}
               onChange={(e) => setState(e.target.value)}
-              className="h-9 rounded-md border border-input bg-background px-3 text-sm focus:outline-none focus:ring-2 focus:ring-ring min-w-[220px]"
+              className="h-9 rounded-md border border-input bg-background px-3 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
             >
-              <option value="">Select a State</option>
+              <option value="">All States</option>
               {US_STATES.map((s) => (
                 <option key={s} value={s}>
                   {s} — {STATE_NAMES[s]}
                 </option>
               ))}
             </select>
-            <Button type="submit" disabled={loading || !state}>
+            <Button type="submit" disabled={loading || !city}>
               {loading ? (
                 <Loader2 className="h-4 w-4 animate-spin mr-2" />
               ) : (
@@ -205,7 +222,7 @@ export default function SearchPage() {
           <div className="flex items-center justify-between">
             <p className="text-sm text-muted-foreground">
               Found {results.length} independent pet store{results.length !== 1 ? "s" : ""}{" "}
-              in {STATE_NAMES[state] || state}
+              in {city}{state ? `, ${state}` : ""}
             </p>
             <Button
               variant="outline"
@@ -222,6 +239,7 @@ export default function SearchPage() {
             {results.map((store) => {
               const isImported = importedIds.has(store.osmId);
               const isImporting = importing === store.osmId;
+              const canImport = hasContactInfo(store);
               return (
                 <Card key={store.osmId} className="hover:shadow-md transition-shadow">
                   <CardContent className="p-5">
@@ -268,30 +286,36 @@ export default function SearchPage() {
                     </div>
 
                     <div className="mt-4">
-                      <Button
-                        size="sm"
-                        variant={isImported ? "secondary" : "default"}
-                        disabled={isImported || isImporting}
-                        onClick={() => handleImport(store)}
-                        className="w-full"
-                      >
-                        {isImported ? (
-                          <>
-                            <Check className="h-4 w-4 mr-2 text-green-600" />
-                            Imported
-                          </>
-                        ) : isImporting ? (
-                          <>
-                            <Loader2 className="h-4 w-4 animate-spin mr-2" />
-                            Importing...
-                          </>
-                        ) : (
-                          <>
-                            <Import className="h-4 w-4 mr-2" />
-                            Import to Pipeline
-                          </>
-                        )}
-                      </Button>
+                      {canImport ? (
+                        <Button
+                          size="sm"
+                          variant={isImported ? "secondary" : "default"}
+                          disabled={isImported || isImporting}
+                          onClick={() => handleImport(store)}
+                          className="w-full"
+                        >
+                          {isImported ? (
+                            <>
+                              <Check className="h-4 w-4 mr-2 text-green-600" />
+                              Imported
+                            </>
+                          ) : isImporting ? (
+                            <>
+                              <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                              Importing...
+                            </>
+                          ) : (
+                            <>
+                              <Import className="h-4 w-4 mr-2" />
+                              Import to Pipeline
+                            </>
+                          )}
+                        </Button>
+                      ) : (
+                        <p className="text-xs text-muted-foreground text-center py-1">
+                          No contact info available
+                        </p>
+                      )}
                     </div>
                   </CardContent>
                 </Card>

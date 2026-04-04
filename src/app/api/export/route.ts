@@ -73,7 +73,7 @@ export async function GET() {
     s.createdAt.toISOString(),
   ]);
 
-  const csv = [headers.join(","), ...rows.map((r: string[]) => r.join(","))].join("\n");
+  const csv = [headers.join(","), ...rows.map((r: (string | null)[]) => r.join(","))].join("\n");
 
   return new NextResponse(csv, {
     headers: {

@@ -69,7 +69,7 @@ model Store {
   address                 String?
   city                    String?
   state                   String?
-  zip                     String
+  zip                     String?
   latitude                Decimal?
   longitude               Decimal?
   website                 String?
@@ -97,7 +97,7 @@ model Store {
   samples        Sample[]
   wholesaleQuotes WholesaleQuote[]
 
-  @@unique([name, zip])
+  @@unique([name, city])
   @@map("stores")
 }
 

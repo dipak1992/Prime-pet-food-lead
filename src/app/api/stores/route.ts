@@ -66,16 +66,24 @@ export async function POST(request: NextRequest) {
     source,
   } = body;
 
-  if (!name || !zip) {
+  if (!name) {
     return NextResponse.json(
-      { error: "Name and ZIP code are required" },
+      { error: "Name is required" },
       { status: 400 }
     );
   }
 
-  // Check for duplicate
+  // Require at least one contact method
+  if (!phone && !email && !website) {
+    return NextResponse.json(
+      { error: "At least one contact method (phone, email, or website) is required" },
+      { status: 400 }
+    );
+  }
+
+  // Check for duplicate by name + city
   const existing = await prisma.store.findUnique({
-    where: { name_zip: { name, zip } },
+    where: { name_city: { name, city: city || null } },
   });
 
   if (existing) {
@@ -105,7 +113,7 @@ export async function POST(request: NextRequest) {
       address: address || null,
       city: city || null,
       state: state || null,
-      zip,
+      zip: zip || null,
       website: website || null,
       email: email || null,
       phone: phone || null,
