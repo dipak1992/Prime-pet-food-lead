@@ -22,24 +22,21 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    // Search for pet stores near the ZIP code
-    const url = new URL("https://api.foursquare.com/v3/places/search");
+    // Search for pet stores near the ZIP code using Foursquare Places API
+    const url = new URL("https://places-api.foursquare.com/places/search");
     url.searchParams.set("query", query);
     url.searchParams.set("near", `${zip}, US`);
     url.searchParams.set("limit", "50");
     url.searchParams.set(
-      "categories",
-      "17128" // Pet stores category in Foursquare
-    );
-    url.searchParams.set(
       "fields",
-      "name,location,tel,website,rating,stats,fsq_id,geocodes"
+      "name,location,tel,website,rating,fsq_place_id,latitude,longitude"
     );
 
     const res = await fetch(url.toString(), {
       headers: {
-        Authorization: FOURSQUARE_API_KEY,
+        Authorization: `Bearer ${FOURSQUARE_API_KEY}`,
         Accept: "application/json",
+        "X-Places-Api-Version": "2025-06-17",
       },
     });
 
@@ -56,7 +53,7 @@ export async function GET(request: NextRequest) {
     // Transform to our format
     const stores = (data.results || []).map(
       (place: {
-        fsq_id: string;
+        fsq_place_id: string;
         name: string;
         location?: {
           formatted_address?: string;
@@ -67,11 +64,10 @@ export async function GET(request: NextRequest) {
         tel?: string;
         website?: string;
         rating?: number;
-        geocodes?: {
-          main?: { latitude: number; longitude: number };
-        };
+        latitude?: { value: number };
+        longitude?: { value: number };
       }) => ({
-        foursquareId: place.fsq_id,
+        foursquareId: place.fsq_place_id,
         name: place.name,
         address: place.location?.formatted_address || "",
         city: place.location?.locality || "",
@@ -80,8 +76,8 @@ export async function GET(request: NextRequest) {
         phone: place.tel || null,
         website: place.website || null,
         googleRating: place.rating || null,
-        latitude: place.geocodes?.main?.latitude || null,
-        longitude: place.geocodes?.main?.longitude || null,
+        latitude: place.latitude?.value || null,
+        longitude: place.longitude?.value || null,
       })
     );
 
