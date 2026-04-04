@@ -97,7 +97,6 @@ model Store {
   samples        Sample[]
   wholesaleQuotes WholesaleQuote[]
 
-  @@unique([name, city])
   @@map("stores")
 }
 
