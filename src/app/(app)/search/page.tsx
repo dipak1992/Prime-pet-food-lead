@@ -4,7 +4,6 @@ import { useState } from "react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Badge } from "@/components/ui/badge";
 import { AddStoreDialog, type StoreFormData } from "@/components/add-store-dialog";
 import {
   Search,
@@ -15,10 +14,11 @@ import {
   Phone,
   Import,
   Check,
+  Mail,
 } from "lucide-react";
 
 interface SearchResult {
-  foursquareId: string;
+  osmId: string;
   name: string;
   address: string;
   city: string;
@@ -26,13 +26,37 @@ interface SearchResult {
   zip: string;
   phone: string | null;
   website: string | null;
-  googleRating: number | null;
+  email: string | null;
   latitude: number | null;
   longitude: number | null;
 }
 
+// US states for dropdown
+const US_STATES = [
+  "AL","AK","AZ","AR","CA","CO","CT","DE","FL","GA",
+  "HI","ID","IL","IN","IA","KS","KY","LA","ME","MD",
+  "MA","MI","MN","MS","MO","MT","NE","NV","NH","NJ",
+  "NM","NY","NC","ND","OH","OK","OR","PA","RI","SC",
+  "SD","TN","TX","UT","VT","VA","WA","WV","WI","WY",
+] as const;
+
+const STATE_NAMES: Record<string, string> = {
+  AL:"Alabama",AK:"Alaska",AZ:"Arizona",AR:"Arkansas",CA:"California",
+  CO:"Colorado",CT:"Connecticut",DE:"Delaware",FL:"Florida",GA:"Georgia",
+  HI:"Hawaii",ID:"Idaho",IL:"Illinois",IN:"Indiana",IA:"Iowa",KS:"Kansas",
+  KY:"Kentucky",LA:"Louisiana",ME:"Maine",MD:"Maryland",MA:"Massachusetts",
+  MI:"Michigan",MN:"Minnesota",MS:"Mississippi",MO:"Missouri",MT:"Montana",
+  NE:"Nebraska",NV:"Nevada",NH:"New Hampshire",NJ:"New Jersey",
+  NM:"New Mexico",NY:"New York",NC:"North Carolina",ND:"North Dakota",
+  OH:"Ohio",OK:"Oklahoma",OR:"Oregon",PA:"Pennsylvania",RI:"Rhode Island",
+  SC:"South Carolina",SD:"South Dakota",TN:"Tennessee",TX:"Texas",UT:"Utah",
+  VT:"Vermont",VA:"Virginia",WA:"Washington",WV:"West Virginia",
+  WI:"Wisconsin",WY:"Wyoming",
+};
+
 export default function SearchPage() {
-  const [zip, setZip] = useState("");
+  const [city, setCity] = useState("");
+  const [state, setState] = useState("");
   const [results, setResults] = useState<SearchResult[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -42,20 +66,25 @@ export default function SearchPage() {
 
   async function handleSearch(e: React.FormEvent) {
     e.preventDefault();
-    if (!zip) return;
+    if (!city) return;
     setLoading(true);
     setError("");
     setResults([]);
 
     try {
-      const res = await fetch(`/api/search?zip=${encodeURIComponent(zip)}`);
+      const params = new URLSearchParams({ city });
+      if (state) params.set("state", STATE_NAMES[state] || state);
+
+      const res = await fetch(`/api/search?${params}`);
       const data = await res.json();
       if (data.error) {
         setError(data.error);
       } else {
         setResults(data.stores || []);
         if (data.stores?.length === 0) {
-          setError("No pet stores found for this ZIP code. Try a nearby ZIP or add stores manually.");
+          setError(
+            `No pet stores found in ${city}${state ? `, ${state}` : ""}. Try a larger city or add stores manually.`
+          );
         }
       }
     } catch {
@@ -66,7 +95,7 @@ export default function SearchPage() {
   }
 
   async function handleImport(store: SearchResult) {
-    setImporting(store.foursquareId);
+    setImporting(store.osmId);
     try {
       const res = await fetch("/api/stores", {
         method: "POST",
@@ -79,17 +108,17 @@ export default function SearchPage() {
           zip: store.zip,
           phone: store.phone,
           website: store.website,
+          email: store.email,
           source: "api_search",
         }),
       });
 
       if (res.ok) {
-        setImportedIds((prev) => new Set([...prev, store.foursquareId]));
+        setImportedIds((prev) => new Set([...prev, store.osmId]));
       } else {
         const data = await res.json();
         if (res.status === 409) {
-          // Already exists
-          setImportedIds((prev) => new Set([...prev, store.foursquareId]));
+          setImportedIds((prev) => new Set([...prev, store.osmId]));
         } else {
           alert(data.error || "Failed to import");
         }
@@ -101,7 +130,7 @@ export default function SearchPage() {
 
   async function handleImportAll() {
     for (const store of results) {
-      if (!importedIds.has(store.foursquareId)) {
+      if (!importedIds.has(store.osmId)) {
         await handleImport(store);
       }
     }
@@ -126,7 +155,7 @@ export default function SearchPage() {
         <div>
           <h1 className="text-2xl font-bold">Find Pet Stores</h1>
           <p className="text-muted-foreground">
-            Search by ZIP code or add stores manually
+            Search by city &amp; state or add stores manually
           </p>
         </div>
         <Button variant="outline" onClick={() => setAddDialogOpen(true)}>
@@ -138,18 +167,29 @@ export default function SearchPage() {
       {/* Search Form */}
       <Card>
         <CardContent className="p-6">
-          <form onSubmit={handleSearch} className="flex gap-3">
-            <div className="relative flex-1 max-w-xs">
+          <form onSubmit={handleSearch} className="flex gap-3 flex-wrap">
+            <div className="relative flex-1 min-w-[180px] max-w-xs">
               <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
               <Input
-                placeholder="Enter ZIP code (e.g. 80202)"
-                value={zip}
-                onChange={(e) => setZip(e.target.value)}
+                placeholder="City (e.g. Denver)"
+                value={city}
+                onChange={(e) => setCity(e.target.value)}
                 className="pl-10"
-                maxLength={10}
               />
             </div>
-            <Button type="submit" disabled={loading || !zip}>
+            <select
+              value={state}
+              onChange={(e) => setState(e.target.value)}
+              className="h-9 rounded-md border border-input bg-background px-3 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+            >
+              <option value="">All States</option>
+              {US_STATES.map((s) => (
+                <option key={s} value={s}>
+                  {s} — {STATE_NAMES[s]}
+                </option>
+              ))}
+            </select>
+            <Button type="submit" disabled={loading || !city}>
               {loading ? (
                 <Loader2 className="h-4 w-4 animate-spin mr-2" />
               ) : (
@@ -158,6 +198,9 @@ export default function SearchPage() {
               Search
             </Button>
           </form>
+          <p className="text-xs text-muted-foreground mt-2">
+            Powered by OpenStreetMap — free &amp; unlimited
+          </p>
         </CardContent>
       </Card>
 
@@ -175,13 +218,13 @@ export default function SearchPage() {
           <div className="flex items-center justify-between">
             <p className="text-sm text-muted-foreground">
               Found {results.length} pet store{results.length !== 1 ? "s" : ""}{" "}
-              near {zip}
+              in {city}{state ? `, ${state}` : ""}
             </p>
             <Button
               variant="outline"
               size="sm"
               onClick={handleImportAll}
-              disabled={results.every((s) => importedIds.has(s.foursquareId))}
+              disabled={results.every((s) => importedIds.has(s.osmId))}
             >
               <Import className="h-4 w-4 mr-2" />
               Import All
@@ -190,28 +233,25 @@ export default function SearchPage() {
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {results.map((store) => {
-              const isImported = importedIds.has(store.foursquareId);
-              const isImporting = importing === store.foursquareId;
+              const isImported = importedIds.has(store.osmId);
+              const isImporting = importing === store.osmId;
               return (
-                <Card key={store.foursquareId} className="hover:shadow-md transition-shadow">
+                <Card key={store.osmId} className="hover:shadow-md transition-shadow">
                   <CardContent className="p-5">
                     <div className="flex items-start justify-between">
                       <div className="flex-1 min-w-0">
                         <h3 className="font-semibold truncate">{store.name}</h3>
-                        <p className="text-sm text-muted-foreground mt-1">
-                          {store.address}
-                        </p>
+                        {store.address && (
+                          <p className="text-sm text-muted-foreground mt-1">
+                            {store.address}
+                          </p>
+                        )}
                         <p className="text-xs text-muted-foreground">
                           {[store.city, store.state, store.zip]
                             .filter(Boolean)
                             .join(", ")}
                         </p>
                       </div>
-                      {store.googleRating && (
-                        <Badge variant="secondary">
-                          ★ {store.googleRating.toFixed(1)}
-                        </Badge>
-                      )}
                     </div>
 
                     <div className="flex items-center gap-4 mt-3 text-sm text-muted-foreground">
@@ -231,6 +271,12 @@ export default function SearchPage() {
                           <Globe className="h-3.5 w-3.5" />
                           Website
                         </a>
+                      )}
+                      {store.email && (
+                        <span className="flex items-center gap-1">
+                          <Mail className="h-3.5 w-3.5" />
+                          {store.email}
+                        </span>
                       )}
                     </div>
 

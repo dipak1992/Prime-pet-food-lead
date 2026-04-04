@@ -1,90 +1,130 @@
 import { NextRequest, NextResponse } from "next/server";
 
-const FOURSQUARE_API_KEY = process.env.FOURSQUARE_API_KEY;
+const OVERPASS_URL = "https://overpass-api.de/api/interpreter";
+
+interface OverpassElement {
+  type: string;
+  id: number;
+  lat?: number;
+  lon?: number;
+  center?: { lat: number; lon: number };
+  tags?: Record<string, string>;
+}
+
+function buildOverpassQuery(city: string, state: string): string {
+  // Search for pet stores using multiple OSM tags
+  // area query uses city name + state context for accuracy
+  const areaFilter = state
+    ? `area["name"="${city}"]["is_in:state"~"${state}",i]->.searchArea;`
+    : `area["name"="${city}"]->.searchArea;`;
+
+  return `[out:json][timeout:30];
+${areaFilter}
+(
+  node["shop"="pet"](area.searchArea);
+  way["shop"="pet"](area.searchArea);
+  node["shop"="pet;grooming"](area.searchArea);
+  way["shop"="pet;grooming"](area.searchArea);
+  node["shop"="pet_food"](area.searchArea);
+  way["shop"="pet_food"](area.searchArea);
+);
+out body center;`;
+}
+
+function buildOverpassQueryFallback(city: string): string {
+  // Fallback without state filter — just match city name
+  return `[out:json][timeout:30];
+area["name"="${city}"]->.searchArea;
+(
+  node["shop"="pet"](area.searchArea);
+  way["shop"="pet"](area.searchArea);
+  node["shop"="pet;grooming"](area.searchArea);
+  way["shop"="pet;grooming"](area.searchArea);
+  node["shop"="pet_food"](area.searchArea);
+  way["shop"="pet_food"](area.searchArea);
+);
+out body center;`;
+}
 
 export async function GET(request: NextRequest) {
   const searchParams = request.nextUrl.searchParams;
-  const zip = searchParams.get("zip");
-  const query = searchParams.get("query") || "pet store";
+  const city = searchParams.get("city")?.trim();
+  const state = searchParams.get("state")?.trim();
+  // Keep backward compatibility with zip
+  const zip = searchParams.get("zip")?.trim();
 
-  if (!zip) {
+  if (!city && !zip) {
     return NextResponse.json(
-      { error: "ZIP code is required" },
+      { error: "City is required" },
       { status: 400 }
     );
   }
 
-  if (!FOURSQUARE_API_KEY) {
-    return NextResponse.json(
-      { error: "Foursquare API key not configured. Add FOURSQUARE_API_KEY to .env" },
-      { status: 500 }
-    );
-  }
-
   try {
-    // Search for pet stores near the ZIP code using Foursquare Places API
-    const url = new URL("https://places-api.foursquare.com/places/search");
-    url.searchParams.set("query", query);
-    url.searchParams.set("near", `${zip}, US`);
-    url.searchParams.set("limit", "50");
-    url.searchParams.set(
-      "fields",
-      "name,location,tel,website,rating,fsq_place_id,latitude,longitude"
-    );
+    const searchCity = city || zip || "";
+    const query = state
+      ? buildOverpassQuery(searchCity, state)
+      : buildOverpassQueryFallback(searchCity);
 
-    const res = await fetch(url.toString(), {
-      headers: {
-        Authorization: `Bearer ${FOURSQUARE_API_KEY}`,
-        Accept: "application/json",
-        "X-Places-Api-Version": "2025-06-17",
-      },
+    let res = await fetch(OVERPASS_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: `data=${encodeURIComponent(query)}`,
     });
 
+    // If state-filtered query returns no results, try fallback without state
+    let data = await res.json();
+    if (state && (!data.elements || data.elements.length === 0)) {
+      const fallbackQuery = buildOverpassQueryFallback(searchCity);
+      res = await fetch(OVERPASS_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/x-www-form-urlencoded" },
+        body: `data=${encodeURIComponent(fallbackQuery)}`,
+      });
+      data = await res.json();
+    }
+
     if (!res.ok) {
-      const err = await res.text();
       return NextResponse.json(
-        { error: `Foursquare API error: ${res.status}`, details: err },
+        { error: `Search API error: ${res.status}` },
         { status: res.status }
       );
     }
 
-    const data = await res.json();
+    // Transform OSM data to our format — only include named places
+    const stores = (data.elements || [])
+      .filter((el: OverpassElement) => el.tags?.name)
+      .map((el: OverpassElement) => {
+        const tags = el.tags || {};
+        const lat = el.lat || el.center?.lat || null;
+        const lon = el.lon || el.center?.lon || null;
 
-    // Transform to our format
-    const stores = (data.results || []).map(
-      (place: {
-        fsq_place_id: string;
-        name: string;
-        location?: {
-          formatted_address?: string;
-          locality?: string;
-          region?: string;
-          postcode?: string;
+        return {
+          osmId: `${el.type}/${el.id}`,
+          name: tags.name,
+          address: [tags["addr:housenumber"], tags["addr:street"]]
+            .filter(Boolean)
+            .join(" ") || "",
+          city: tags["addr:city"] || searchCity,
+          state: tags["addr:state"] || state || "",
+          zip: tags["addr:postcode"] || "",
+          phone: tags.phone || tags["contact:phone"] || null,
+          website: tags.website || tags["contact:website"] || null,
+          email: tags.email || tags["contact:email"] || null,
+          latitude: lat,
+          longitude: lon,
         };
-        tel?: string;
-        website?: string;
-        rating?: number;
-        latitude?: { value: number };
-        longitude?: { value: number };
-      }) => ({
-        foursquareId: place.fsq_place_id,
-        name: place.name,
-        address: place.location?.formatted_address || "",
-        city: place.location?.locality || "",
-        state: place.location?.region || "",
-        zip: place.location?.postcode || zip,
-        phone: place.tel || null,
-        website: place.website || null,
-        googleRating: place.rating || null,
-        latitude: place.latitude?.value || null,
-        longitude: place.longitude?.value || null,
-      })
-    );
+      });
 
-    return NextResponse.json({ stores, count: stores.length });
+    return NextResponse.json({
+      stores,
+      count: stores.length,
+      source: "openstreetmap",
+    });
   } catch (error) {
+    console.error("Search error:", error);
     return NextResponse.json(
-      { error: "Failed to search stores" },
+      { error: "Failed to search stores. Please try again." },
       { status: 500 }
     );
   }
