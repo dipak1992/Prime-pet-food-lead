@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 
 export async function GET() {
+  try {
   const [
     totalStores,
     storesByStage,
@@ -76,4 +77,11 @@ export async function GET() {
     recentStores,
     actionItems,
   });
+  } catch (error) {
+    console.error("Dashboard error:", error);
+    return NextResponse.json(
+      { error: "Failed to load dashboard" },
+      { status: 500 }
+    );
+  }
 }

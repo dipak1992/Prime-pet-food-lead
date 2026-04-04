@@ -32,9 +32,11 @@ export default function EmailsPage() {
     fetch("/api/stores?stage=all")
       .then((r) => r.json())
       .then((data) => {
-        setStores(data);
-        if (data.length > 0) setSelectedStore(data[0]);
+        const list = Array.isArray(data) ? data : [];
+        setStores(list);
+        if (list.length > 0) setSelectedStore(list[0]);
       })
+      .catch(() => setStores([]))
       .finally(() => setLoading(false));
   }, []);
 
