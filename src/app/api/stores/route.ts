@@ -3,39 +3,47 @@ import { prisma } from "@/lib/prisma";
 import { calculateRelevanceScore } from "@/lib/utils";
 
 export async function GET(request: NextRequest) {
-  const searchParams = request.nextUrl.searchParams;
-  const stage = searchParams.get("stage");
-  const search = searchParams.get("search");
-  const hasTreats = searchParams.get("hasTreats");
+  try {
+    const searchParams = request.nextUrl.searchParams;
+    const stage = searchParams.get("stage");
+    const search = searchParams.get("search");
+    const hasTreats = searchParams.get("hasTreats");
 
-  const where: Record<string, unknown> = {};
+    const where: Record<string, unknown> = {};
 
-  if (stage && stage !== "all") {
-    where.pipelineStage = stage;
-  }
-  if (hasTreats === "true") {
-    where.sellsDogTreats = true;
-  }
-  if (search) {
-    where.OR = [
-      { name: { contains: search, mode: "insensitive" } },
-      { city: { contains: search, mode: "insensitive" } },
-      { state: { contains: search, mode: "insensitive" } },
-      { zip: { contains: search } },
-    ];
-  }
+    if (stage && stage !== "all") {
+      where.pipelineStage = stage;
+    }
+    if (hasTreats === "true") {
+      where.sellsDogTreats = true;
+    }
+    if (search) {
+      where.OR = [
+        { name: { contains: search, mode: "insensitive" } },
+        { city: { contains: search, mode: "insensitive" } },
+        { state: { contains: search, mode: "insensitive" } },
+        { zip: { contains: search } },
+      ];
+    }
 
-  const stores = await prisma.store.findMany({
-    where,
-    orderBy: { createdAt: "desc" },
-    include: {
-      _count: {
-        select: { outreachEmails: true, samples: true },
+    const stores = await prisma.store.findMany({
+      where,
+      orderBy: { createdAt: "desc" },
+      include: {
+        _count: {
+          select: { outreachEmails: true, samples: true },
+        },
       },
-    },
-  });
+    });
 
-  return NextResponse.json(stores);
+    return NextResponse.json(stores);
+  } catch (error) {
+    console.error("Failed to fetch stores:", error);
+    return NextResponse.json(
+      { error: "Failed to fetch stores" },
+      { status: 500 }
+    );
+  }
 }
 
 export async function POST(request: NextRequest) {

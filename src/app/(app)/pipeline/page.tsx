@@ -16,9 +16,18 @@ export default function PipelinePage() {
   const router = useRouter();
 
   async function fetchStores() {
-    const res = await fetch("/api/stores");
-    const data = await res.json();
-    setStores(data);
+    try {
+      const res = await fetch("/api/stores");
+      if (!res.ok) {
+        console.error("Failed to fetch stores:", res.status);
+        setLoading(false);
+        return;
+      }
+      const data = await res.json();
+      setStores(Array.isArray(data) ? data : []);
+    } catch (err) {
+      console.error("Failed to fetch stores:", err);
+    }
     setLoading(false);
   }
 
