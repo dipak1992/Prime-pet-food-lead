@@ -125,9 +125,10 @@ export async function POST(request: NextRequest) {
 
     return NextResponse.json(store, { status: 201 });
   } catch (error) {
-    console.error("Failed to create store:", error);
+    const message = error instanceof Error ? error.message : String(error);
+    console.error("Failed to create store:", message);
     return NextResponse.json(
-      { error: "Failed to create store. Please try again." },
+      { error: `Failed to create store: ${message}` },
       { status: 500 }
     );
   }

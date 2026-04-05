@@ -120,11 +120,18 @@ export default function SearchPage() {
       if (res.ok) {
         setImportedIds((prev) => new Set([...prev, store.osmId]));
       } else {
-        const data = await res.json();
+        let errorMsg = `Import failed (${res.status})`;
+        try {
+          const data = await res.json();
+          errorMsg = data.error || errorMsg;
+        } catch {
+          const text = await res.text();
+          errorMsg = text.slice(0, 200) || errorMsg;
+        }
         if (res.status === 409) {
           setImportedIds((prev) => new Set([...prev, store.osmId]));
         } else {
-          alert(data.error || "Failed to import");
+          alert(errorMsg);
         }
       }
     } finally {
