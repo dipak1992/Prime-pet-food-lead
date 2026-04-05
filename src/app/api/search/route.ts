@@ -24,12 +24,10 @@ interface OverpassElement {
 }
 
 function buildOverpassQuery(city: string, state: string): string {
-  const areaFilter = state
-    ? `area["name"="${city}"]["is_in:state"~"${state}",i]->.searchArea;`
-    : `area["name"="${city}"]->.searchArea;`;
-
+  // Use nested area: find city within state boundary
   return `[out:json][timeout:30];
-${areaFilter}
+area["name"="${state}"]["admin_level"="4"]->.state;
+area["name"="${city}"](area.state)->.searchArea;
 (
   node["shop"="pet"](area.searchArea);
   way["shop"="pet"](area.searchArea);
