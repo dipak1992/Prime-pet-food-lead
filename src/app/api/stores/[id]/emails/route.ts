@@ -34,3 +34,28 @@ export async function POST(
 
   return NextResponse.json(email, { status: 201 });
 }
+
+export async function DELETE(
+  request: NextRequest,
+  { params }: { params: Promise<{ id: string }> }
+) {
+  const { id } = await params;
+  const { emailId } = await request.json();
+
+  if (!emailId) {
+    return NextResponse.json({ error: "emailId is required" }, { status: 400 });
+  }
+
+  // Verify the email belongs to this store
+  const email = await prisma.outreachEmail.findFirst({
+    where: { id: emailId, storeId: id },
+  });
+
+  if (!email) {
+    return NextResponse.json({ error: "Email not found" }, { status: 404 });
+  }
+
+  await prisma.outreachEmail.delete({ where: { id: emailId } });
+
+  return NextResponse.json({ success: true });
+}

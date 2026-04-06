@@ -178,6 +178,27 @@ export default function StoreDetailPage({
     );
   }
 
+  async function handleDeleteEmail(emailId: string) {
+    if (!confirm("Delete this email?")) return;
+    try {
+      const res = await fetch(`/api/stores/${id}/emails`, {
+        method: "DELETE",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ emailId }),
+      });
+      if (!res.ok) {
+        const data = await res.json();
+        alert(`Delete failed: ${data.error}`);
+        return;
+      }
+      // Refresh store
+      const storeRes = await fetch(`/api/stores/${id}`);
+      setStore(await storeRes.json());
+    } catch {
+      alert("Failed to delete email.");
+    }
+  }
+
   async function handleSendEmail(emailId: string) {
     setSendingEmailId(emailId);
     try {
@@ -592,6 +613,15 @@ export default function StoreDetailPage({
                             Sent {formatDate(outreach.sentAt)}
                           </span>
                         )}
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          className="text-destructive hover:text-destructive ml-auto"
+                          onClick={() => handleDeleteEmail(outreach.id)}
+                        >
+                          <Trash2 className="h-3.5 w-3.5 mr-1" />
+                          Delete
+                        </Button>
                       </div>
                     </div>
                   ))}
