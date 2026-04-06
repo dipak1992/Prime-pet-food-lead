@@ -7,6 +7,107 @@ datasource db {
   provider = "postgresql"
 }
 
+model Store {
+  id                      String           @id @default(uuid())
+  name                    String
+  address                 String?
+  city                    String?
+  state                   String?
+  zip                     String?
+  latitude                Decimal?
+  longitude               Decimal?
+  website                 String?
+  email                   String?
+  phone                   String?
+  instagram               String?
+  facebook                String?
+  preferredChannel        PreferredChannel @default(email) @map("preferred_channel")
+  googleRating            Decimal?         @map("google_rating")
+  googleReviewCount       Int?             @map("google_review_count")
+  sellsDogTreats          Boolean?         @map("sells_dog_treats")
+  sellsCompetitorProducts Boolean          @default(false) @map("sells_competitor_products")
+  competitorBrands        String[]         @map("competitor_brands")
+  relevanceScore          Int?             @map("relevance_score")
+  source                  StoreSource      @default(manual)
+  pipelineStage           PipelineStage    @default(new) @map("pipeline_stage")
+  lostReason              String?          @map("lost_reason")
+  notes                   String?
+  contactedAt             DateTime?        @map("contacted_at")
+  nextFollowUpAt          DateTime?        @map("next_follow_up_at")
+  createdAt               DateTime         @default(now()) @map("created_at")
+  updatedAt               DateTime         @updatedAt @map("updated_at")
+  outreachEmails          OutreachEmail[]
+  samples                 Sample[]
+  wholesaleQuotes         WholesaleQuote[]
+
+  @@map("stores")
+}
+
+model OutreachEmail {
+  id           String          @id @default(uuid())
+  storeId      String          @map("store_id")
+  sequenceStep Int             @map("sequence_step")
+  channel      OutreachChannel @default(email)
+  subject      String?
+  body         String
+  sentAt       DateTime?       @map("sent_at")
+  repliedAt    DateTime?       @map("replied_at")
+  status       OutreachStatus  @default(draft)
+  createdAt    DateTime        @default(now()) @map("created_at")
+  store        Store           @relation(fields: [storeId], references: [id], onDelete: Cascade)
+
+  @@map("outreach_emails")
+}
+
+model Sample {
+  id             String       @id @default(uuid())
+  storeId        String       @map("store_id")
+  shippedAt      DateTime?    @map("shipped_at")
+  deliveredAt    DateTime?    @map("delivered_at")
+  feedback       String?
+  feedbackAt     DateTime?    @map("feedback_at")
+  status         SampleStatus @default(requested)
+  trackingNumber String?      @map("tracking_number")
+  createdAt      DateTime     @default(now()) @map("created_at")
+  store          Store        @relation(fields: [storeId], references: [id], onDelete: Cascade)
+
+  @@map("samples")
+}
+
+model EmailTemplate {
+  id           String           @id @default(uuid())
+  name         String
+  category     TemplateCategory
+  sequenceStep Int              @map("sequence_step")
+  subject      String
+  body         String
+  isDefault    Boolean          @default(false) @map("is_default")
+  createdAt    DateTime         @default(now()) @map("created_at")
+
+  @@map("email_templates")
+}
+
+model WholesaleQuote {
+  id        String   @id @default(uuid())
+  storeId   String   @map("store_id")
+  tiers     Json
+  notes     String?
+  createdAt DateTime @default(now()) @map("created_at")
+  store     Store    @relation(fields: [storeId], references: [id], onDelete: Cascade)
+
+  @@map("wholesale_quotes")
+}
+
+model ApiUsage {
+  id           String   @id @default(uuid())
+  apiName      String   @map("api_name")
+  requestCount Int      @default(0) @map("request_count")
+  date         DateTime @db.Date
+
+  @@unique([apiName, date])
+  @@map("api_usage")
+}
+
 enum StoreSource {
   api_search
   manual
@@ -61,109 +162,4 @@ enum TemplateCategory {
   competitor_carrier
   online_store
   custom
-}
-
-model Store {
-  id                      String          @id @default(uuid())
-  name                    String
-  address                 String?
-  city                    String?
-  state                   String?
-  zip                     String?
-  latitude                Decimal?
-  longitude               Decimal?
-  website                 String?
-  email                   String?
-  phone                   String?
-  instagram               String?
-  facebook                String?
-  preferredChannel        PreferredChannel @default(email) @map("preferred_channel")
-  googleRating            Decimal?        @map("google_rating")
-  googleReviewCount       Int?            @map("google_review_count")
-  sellsDogTreats          Boolean?        @map("sells_dog_treats")
-  sellsCompetitorProducts Boolean         @default(false) @map("sells_competitor_products")
-  competitorBrands        String[]        @map("competitor_brands")
-  relevanceScore          Int?            @map("relevance_score")
-  source                  StoreSource     @default(manual)
-  pipelineStage           PipelineStage   @default(new) @map("pipeline_stage")
-  lostReason              String?         @map("lost_reason")
-  notes                   String?
-  contactedAt             DateTime?       @map("contacted_at")
-  nextFollowUpAt          DateTime?       @map("next_follow_up_at")
-  createdAt               DateTime        @default(now()) @map("created_at")
-  updatedAt               DateTime        @updatedAt @map("updated_at")
-
-  outreachEmails OutreachEmail[]
-  samples        Sample[]
-  wholesaleQuotes WholesaleQuote[]
-
-  @@map("stores")
-}
-
-model OutreachEmail {
-  id           String         @id @default(uuid())
-  storeId      String         @map("store_id")
-  sequenceStep Int            @map("sequence_step")
-  channel      OutreachChannel @default(email)
-  subject      String?
-  body         String
-  sentAt       DateTime?      @map("sent_at")
-  repliedAt    DateTime?      @map("replied_at")
-  status       OutreachStatus @default(draft)
-  createdAt    DateTime       @default(now()) @map("created_at")
-
-  store Store @relation(fields: [storeId], references: [id], onDelete: Cascade)
-
-  @@map("outreach_emails")
-}
-
-model Sample {
-  id             String       @id @default(uuid())
-  storeId        String       @map("store_id")
-  shippedAt      DateTime?    @map("shipped_at")
-  deliveredAt    DateTime?    @map("delivered_at")
-  feedback       String?
-  feedbackAt     DateTime?    @map("feedback_at")
-  status         SampleStatus @default(requested)
-  trackingNumber String?      @map("tracking_number")
-  createdAt      DateTime     @default(now()) @map("created_at")
-
-  store Store @relation(fields: [storeId], references: [id], onDelete: Cascade)
-
-  @@map("samples")
-}
-
-model EmailTemplate {
-  id           String           @id @default(uuid())
-  name         String
-  category     TemplateCategory
-  sequenceStep Int              @map("sequence_step")
-  subject      String
-  body         String
-  isDefault    Boolean          @default(false) @map("is_default")
-  createdAt    DateTime         @default(now()) @map("created_at")
-
-  @@map("email_templates")
-}
-
-model WholesaleQuote {
-  id        String   @id @default(uuid())
-  storeId   String   @map("store_id")
-  tiers     Json
-  notes     String?
-  createdAt DateTime @default(now()) @map("created_at")
-
-  store Store @relation(fields: [storeId], references: [id], onDelete: Cascade)
-
-  @@map("wholesale_quotes")
-}
-
-model ApiUsage {
-  id           String   @id @default(uuid())
-  apiName      String   @map("api_name")
-  requestCount Int      @default(0) @map("request_count")
-  date         DateTime @db.Date
-
-  @@unique([apiName, date])
-  @@map("api_usage")
 }
