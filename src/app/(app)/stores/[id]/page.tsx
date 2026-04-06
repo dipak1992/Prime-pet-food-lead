@@ -29,6 +29,7 @@ import {
   ExternalLink,
   Copy,
   Check,
+  Send,
 } from "lucide-react";
 import Link from "next/link";
 
@@ -93,6 +94,8 @@ export default function StoreDetailPage({
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [extracting, setExtracting] = useState(false);
+  const [sendingEmailId, setSendingEmailId] = useState<string | null>(null);
+  const [bulkSending, setBulkSending] = useState(false);
 
   // Editable fields
   const [email, setEmail] = useState("");
@@ -173,6 +176,66 @@ export default function StoreDetailPage({
         ? `Found: ${data.emails.join(", ")}${data.treatKeywords?.length ? `\nTreat keywords: ${data.treatKeywords.join(", ")}` : ""}`
         : "No emails found on the website."
     );
+  }
+
+  async function handleSendEmail(emailId: string) {
+    setSendingEmailId(emailId);
+    try {
+      const res = await fetch("/api/emails/send", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ emailId }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        alert(`Send failed: ${data.error}`);
+        return;
+      }
+      alert(`Email sent to ${data.sentTo}`);
+      // Refresh store
+      const storeRes = await fetch(`/api/stores/${id}`);
+      setStore(await storeRes.json());
+    } catch {
+      alert("Failed to send email. Please try again.");
+    } finally {
+      setSendingEmailId(null);
+    }
+  }
+
+  async function handleBulkSend() {
+    if (!store) return;
+    const drafts = store.outreachEmails.filter((e) => e.status === "draft");
+    if (drafts.length === 0) {
+      alert("No draft emails to send.");
+      return;
+    }
+    if (!store.email) {
+      alert("This store has no email address. Add one in the Details tab first.");
+      return;
+    }
+    if (!confirm(`Send ${drafts.length} draft email(s) to ${store.email}?`)) return;
+
+    setBulkSending(true);
+    try {
+      const res = await fetch("/api/emails/bulk-send", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ emailIds: drafts.map((e) => e.id) }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        alert(`Bulk send failed: ${data.error}`);
+        return;
+      }
+      alert(`Sent: ${data.summary.sent}, Skipped: ${data.summary.skipped}, Failed: ${data.summary.failed}`);
+      // Refresh store
+      const storeRes = await fetch(`/api/stores/${id}`);
+      setStore(await storeRes.json());
+    } catch {
+      alert("Bulk send failed. Please try again.");
+    } finally {
+      setBulkSending(false);
+    }
   }
 
   async function handleSaveEmail(emailData: {
@@ -420,6 +483,8 @@ export default function StoreDetailPage({
         <TabsContent value="email">
           <EmailGenerator
             storeName={store.name}
+            storeId={store.id}
+            storeEmail={store.email}
             storeCity={store.city}
             storeState={store.state}
             storeWebsite={store.website}
@@ -433,8 +498,22 @@ export default function StoreDetailPage({
         {/* Outreach History Tab */}
         <TabsContent value="outreach">
           <Card>
-            <CardHeader>
+            <CardHeader className="flex flex-row items-center justify-between">
               <CardTitle className="text-base">Outreach History</CardTitle>
+              {store.outreachEmails.some((e) => e.status === "draft") && (
+                <Button
+                  size="sm"
+                  onClick={handleBulkSend}
+                  disabled={bulkSending}
+                >
+                  {bulkSending ? (
+                    <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                  ) : (
+                    <Send className="h-4 w-4 mr-2" />
+                  )}
+                  Send All Drafts
+                </Button>
+              )}
             </CardHeader>
             <CardContent>
               {store.outreachEmails.length === 0 ? (
@@ -480,19 +559,40 @@ export default function StoreDetailPage({
                       <p className="text-sm text-muted-foreground whitespace-pre-wrap">
                         {outreach.body}
                       </p>
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        onClick={() => {
-                          const text = outreach.subject
-                            ? `Subject: ${outreach.subject}\n\n${outreach.body}`
-                            : outreach.body;
-                          navigator.clipboard.writeText(text);
-                        }}
-                      >
-                        <Copy className="h-3.5 w-3.5 mr-1" />
-                        Copy
-                      </Button>
+                      <div className="flex gap-2">
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => {
+                            const text = outreach.subject
+                              ? `Subject: ${outreach.subject}\n\n${outreach.body}`
+                              : outreach.body;
+                            navigator.clipboard.writeText(text);
+                          }}
+                        >
+                          <Copy className="h-3.5 w-3.5 mr-1" />
+                          Copy
+                        </Button>
+                        {outreach.status === "draft" && (
+                          <Button
+                            size="sm"
+                            onClick={() => handleSendEmail(outreach.id)}
+                            disabled={sendingEmailId === outreach.id}
+                          >
+                            {sendingEmailId === outreach.id ? (
+                              <Loader2 className="h-3.5 w-3.5 animate-spin mr-1" />
+                            ) : (
+                              <Send className="h-3.5 w-3.5 mr-1" />
+                            )}
+                            Send
+                          </Button>
+                        )}
+                        {outreach.sentAt && (
+                          <span className="text-xs text-muted-foreground self-center">
+                            Sent {formatDate(outreach.sentAt)}
+                          </span>
+                        )}
+                      </div>
                     </div>
                   ))}
                 </div>

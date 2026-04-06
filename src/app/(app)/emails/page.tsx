@@ -121,6 +121,8 @@ export default function EmailsPage() {
           {selectedStore ? (
             <EmailGenerator
               storeName={selectedStore.name}
+              storeId={selectedStore.id}
+              storeEmail={selectedStore.email}
               storeCity={selectedStore.city}
               storeState={selectedStore.state}
               storeWebsite={selectedStore.website}

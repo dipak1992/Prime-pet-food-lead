@@ -12,10 +12,12 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Badge } from "@/components/ui/badge";
-import { Copy, Check, Loader2, RefreshCw } from "lucide-react";
+import { Copy, Check, Loader2, RefreshCw, Send } from "lucide-react";
 
 interface EmailGeneratorProps {
   storeName: string;
+  storeId?: string;
+  storeEmail?: string | null;
   storeCity?: string | null;
   storeState?: string | null;
   storeWebsite?: string | null;
@@ -35,6 +37,8 @@ const TEMPLATE_CATEGORIES = [
 
 export function EmailGenerator({
   storeName,
+  storeId,
+  storeEmail,
   storeCity,
   storeState,
   storeWebsite,
@@ -51,6 +55,7 @@ export function EmailGenerator({
   const [body, setBody] = useState("");
   const [loading, setLoading] = useState(false);
   const [copied, setCopied] = useState(false);
+  const [sending, setSending] = useState(false);
 
   async function generateEmail() {
     setLoading(true);
@@ -169,10 +174,61 @@ export function EmailGenerator({
               {onSave && (
                 <Button
                   size="sm"
+                  variant="outline"
                   onClick={() => onSave({ subject, body, sequenceStep })}
                 >
-                  Save to Outreach
+                  Save Draft
                 </Button>
+              )}
+              {storeId && storeEmail && (
+                <Button
+                  size="sm"
+                  onClick={async () => {
+                    if (!confirm(`Send this email to ${storeEmail}?`)) return;
+                    setSending(true);
+                    try {
+                      // Save first, then send
+                      const saveRes = await fetch(`/api/stores/${storeId}/emails`, {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ subject, body, sequenceStep }),
+                      });
+                      const saved = await saveRes.json();
+
+                      const sendRes = await fetch("/api/emails/send", {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify({ emailId: saved.id }),
+                      });
+                      const sendData = await sendRes.json();
+                      if (!sendRes.ok) {
+                        alert(`Send failed: ${sendData.error}`);
+                      } else {
+                        alert(`Email sent to ${storeEmail}!`);
+                        // Clear fields after successful send
+                        setSubject("");
+                        setBody("");
+                      }
+                    } catch {
+                      alert("Failed to send. Please try again.");
+                    } finally {
+                      setSending(false);
+                    }
+                  }}
+                  disabled={sending}
+                >
+                  {sending ? (
+                    <Loader2 className="h-4 w-4 animate-spin mr-1" />
+                  ) : (
+                    <Send className="h-4 w-4 mr-1" />
+                  )}
+                  {sending ? "Sending..." : "Save & Send"}
+                </Button>
+              )}
+              {storeId && !storeEmail && (
+                <span className="text-xs text-muted-foreground self-center">
+                  Add store email to enable sending
+                </span>
               )}
             </div>
           </div>
