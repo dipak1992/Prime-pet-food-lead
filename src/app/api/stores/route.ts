@@ -1,6 +1,8 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { calculateRelevanceScore } from "@/lib/utils";
+import { calculateLeadScore } from "@/services/scoring/leadScore";
+import { FEATURES } from "@/config/features";
 
 export async function GET(request: NextRequest) {
   try {
@@ -65,6 +67,7 @@ export async function POST(request: NextRequest) {
       pipelineStage,
       sellsDogTreats,
       source,
+      leadType,
     } = body;
 
     if (!name) {
@@ -103,6 +106,22 @@ export async function POST(request: NextRequest) {
       website,
     });
 
+    // Calculate AI lead score if enabled (new layer — does not replace relevanceScore)
+    let leadScore: number | null = null;
+    let leadTemperature: string | null = null;
+    if (FEATURES.ENABLE_LEAD_SCORING) {
+      const scoring = calculateLeadScore({
+        sellsDogTreats: treatsValue,
+        sellsCompetitorProducts: false,
+        email,
+        phone,
+        website,
+        leadType: leadType || null,
+      });
+      leadScore = scoring.score;
+      leadTemperature = scoring.temperature;
+    }
+
     const store = await prisma.store.create({
       data: {
         name,
@@ -119,6 +138,9 @@ export async function POST(request: NextRequest) {
         pipelineStage: pipelineStage || "new",
         sellsDogTreats: treatsValue,
         relevanceScore,
+        leadType: leadType || null,
+        leadScore,
+        leadTemperature,
         source: source || "manual",
       },
     });

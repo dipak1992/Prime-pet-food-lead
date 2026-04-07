@@ -14,6 +14,8 @@ import {
   Plus,
 } from "lucide-react";
 import { PIPELINE_STAGES, getStageInfo, formatDate } from "@/lib/utils";
+import { LEAD_TYPE_LABELS, type LeadType } from "@/config/features";
+import { getTemperatureColor } from "@/services/scoring/leadScore";
 import Link from "next/link";
 
 interface DashboardData {
@@ -27,6 +29,8 @@ interface DashboardData {
     name: string;
     pipelineStage: string;
     relevanceScore: number | null;
+    leadType: string | null;
+    leadTemperature: string | null;
     createdAt: string;
   }[];
   actionItems: {
@@ -226,14 +230,28 @@ export default function DashboardPage() {
                     >
                       <div>
                         <p className="font-medium text-sm">{store.name}</p>
-                        <p className="text-xs text-muted-foreground">
-                          Score:{" "}
-                          {store.relevanceScore != null
-                            ? store.relevanceScore
-                            : "—"}
-                        </p>
+                        <div className="flex items-center gap-2 mt-0.5">
+                          <p className="text-xs text-muted-foreground">
+                            Score:{" "}
+                            {store.relevanceScore != null
+                              ? store.relevanceScore
+                              : "—"}
+                          </p>
+                          {store.leadType && (
+                            <span className="text-[10px] text-muted-foreground">
+                              {LEAD_TYPE_LABELS[store.leadType as LeadType] || store.leadType}
+                            </span>
+                          )}
+                        </div>
                       </div>
-                      <Badge className={stage.color}>{stage.label}</Badge>
+                      <div className="flex items-center gap-1.5">
+                        {store.leadTemperature && (
+                          <Badge className={`${getTemperatureColor(store.leadTemperature as "HOT" | "WARM" | "COLD")} text-[10px]`}>
+                            {store.leadTemperature}
+                          </Badge>
+                        )}
+                        <Badge className={stage.color}>{stage.label}</Badge>
+                      </div>
                     </Link>
                   );
                 })}

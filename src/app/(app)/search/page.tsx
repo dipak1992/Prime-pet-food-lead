@@ -5,6 +5,8 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { AddStoreDialog, type StoreFormData } from "@/components/add-store-dialog";
+import { Badge } from "@/components/ui/badge";
+import { LEAD_TYPE_OPTIONS, LEAD_TYPE_LABELS, type LeadType } from "@/config/features";
 import {
   Search,
   Loader2,
@@ -29,6 +31,7 @@ interface SearchResult {
   email: string | null;
   latitude: number | null;
   longitude: number | null;
+  leadType?: string;
 }
 
 // US states for dropdown
@@ -57,6 +60,7 @@ const STATE_NAMES: Record<string, string> = {
 export default function SearchPage() {
   const [city, setCity] = useState("");
   const [state, setState] = useState("");
+  const [leadType, setLeadType] = useState<LeadType>("pet_store");
   const [results, setResults] = useState<SearchResult[]>([]);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
@@ -76,19 +80,43 @@ export default function SearchPage() {
     setResults([]);
 
     try {
-      const params = new URLSearchParams({ city });
-      if (state) params.set("state", STATE_NAMES[state] || state);
+      const stateName = state ? (STATE_NAMES[state] || state) : undefined;
 
-      const res = await fetch(`/api/search?${params}`);
-      const data = await res.json();
-      if (data.error) {
-        setError(data.error);
+      if (leadType === "pet_store") {
+        // Use existing /api/search endpoint — UNCHANGED
+        const params = new URLSearchParams({ city });
+        if (stateName) params.set("state", stateName);
+
+        const res = await fetch(`/api/search?${params}`);
+        const data = await res.json();
+        if (data.error) {
+          setError(data.error);
+        } else {
+          const stores = (data.stores || []).map((s: SearchResult) => ({ ...s, leadType: "pet_store" }));
+          setResults(stores);
+          if (stores.length === 0) {
+            setError(
+              `No independent pet stores found in ${city}${state ? `, ${state}` : ""}. Try a larger city or add stores manually.`
+            );
+          }
+        }
       } else {
-        setResults(data.stores || []);
-        if (data.stores?.length === 0) {
-          setError(
-            `No independent pet stores found in ${city}${state ? `, ${state}` : ""}. Try a larger city or add stores manually.`
-          );
+        // Use new /api/search-leads endpoint for other lead types
+        const params = new URLSearchParams({ city, type: leadType });
+        if (stateName) params.set("state", stateName);
+
+        const res = await fetch(`/api/search-leads?${params}`);
+        const data = await res.json();
+        if (data.error) {
+          setError(data.error);
+        } else {
+          setResults(data.stores || []);
+          if (data.stores?.length === 0) {
+            const typeLabel = LEAD_TYPE_LABELS[leadType] || leadType;
+            setError(
+              `No ${typeLabel.toLowerCase()}s found in ${city}${state ? `, ${state}` : ""}. Try a larger city or different lead type.`
+            );
+          }
         }
       }
     } catch {
@@ -114,6 +142,7 @@ export default function SearchPage() {
           website: store.website,
           email: store.email,
           source: "api_search",
+          leadType: store.leadType || leadType,
         }),
       });
 
@@ -164,9 +193,9 @@ export default function SearchPage() {
     <div className="space-y-6">
       <div className="flex items-center justify-between">
         <div>
-          <h1 className="text-2xl font-bold">Find Pet Stores</h1>
+          <h1 className="text-2xl font-bold">Find B2B Leads</h1>
           <p className="text-muted-foreground">
-            Search by city &amp; state or add stores manually (excludes major chains)
+            Search pet businesses by city &amp; state (excludes major chains)
           </p>
         </div>
         <Button variant="outline" onClick={() => setAddDialogOpen(true)}>
@@ -179,6 +208,17 @@ export default function SearchPage() {
       <Card>
         <CardContent className="p-6">
           <form onSubmit={handleSearch} className="flex gap-3 flex-wrap">
+            <select
+              value={leadType}
+              onChange={(e) => setLeadType(e.target.value as LeadType)}
+              className="h-9 rounded-md border border-input bg-background px-3 text-sm focus:outline-none focus:ring-2 focus:ring-ring"
+            >
+              {LEAD_TYPE_OPTIONS.filter((o) => o.enabled).map((o) => (
+                <option key={o.value} value={o.value}>
+                  {o.label}
+                </option>
+              ))}
+            </select>
             <div className="relative flex-1 min-w-[180px] max-w-xs">
               <MapPin className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
               <Input
@@ -210,7 +250,7 @@ export default function SearchPage() {
             </Button>
           </form>
           <p className="text-xs text-muted-foreground mt-2">
-            Powered by OpenStreetMap — excludes PetSmart, Petco, Pet Supplies Plus
+            Powered by OpenStreetMap — excludes major chains
           </p>
         </CardContent>
       </Card>
@@ -228,7 +268,7 @@ export default function SearchPage() {
         <div className="space-y-4">
           <div className="flex items-center justify-between">
             <p className="text-sm text-muted-foreground">
-              Found {results.length} independent pet store{results.length !== 1 ? "s" : ""}{" "}
+              Found {results.length} {LEAD_TYPE_LABELS[leadType]?.toLowerCase() || "result"}{results.length !== 1 ? "s" : ""}{" "}
               in {city}{state ? `, ${state}` : ""}
             </p>
             <Button
@@ -252,7 +292,14 @@ export default function SearchPage() {
                   <CardContent className="p-5">
                     <div className="flex items-start justify-between">
                       <div className="flex-1 min-w-0">
-                        <h3 className="font-semibold truncate">{store.name}</h3>
+                        <div className="flex items-center gap-2">
+                          <h3 className="font-semibold truncate">{store.name}</h3>
+                          {store.leadType && store.leadType !== "pet_store" && (
+                            <Badge variant="secondary" className="text-[10px] shrink-0">
+                              {LEAD_TYPE_LABELS[store.leadType as LeadType] || store.leadType}
+                            </Badge>
+                          )}
+                        </div>
                         {store.address && (
                           <p className="text-sm text-muted-foreground mt-1">
                             {store.address}

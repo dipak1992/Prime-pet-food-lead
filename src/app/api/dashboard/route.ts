@@ -34,6 +34,8 @@ export async function GET() {
         name: true,
         pipelineStage: true,
         relevanceScore: true,
+        leadType: true,
+        leadTemperature: true,
         createdAt: true,
       },
     }),

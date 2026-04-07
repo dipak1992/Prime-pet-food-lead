@@ -20,7 +20,7 @@ import { useRouter } from "next/navigation";
 
 const navigation = [
   { name: "Dashboard", href: "/", icon: LayoutDashboard },
-  { name: "Find Stores", href: "/search", icon: Search },
+  { name: "Find Leads", href: "/search", icon: Search },
   { name: "Pipeline", href: "/pipeline", icon: BarChart3 },
   { name: "Email Studio", href: "/emails", icon: Mail },
   { name: "Samples", href: "/samples", icon: Package },
