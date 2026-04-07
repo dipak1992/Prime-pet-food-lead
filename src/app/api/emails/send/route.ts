@@ -66,6 +66,16 @@ export async function POST(request: NextRequest) {
       });
     }
 
+    // Log activity
+    await prisma.activity.create({
+      data: {
+        storeId: outreachEmail.store.id,
+        type: "email_sent",
+        title: `Email sent: Step ${outreachEmail.sequenceStep}`,
+        detail: `To: ${recipientEmail} — ${outreachEmail.subject || "No subject"}`,
+      },
+    });
+
     return NextResponse.json({
       success: true,
       email: updated,

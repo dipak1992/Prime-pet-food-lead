@@ -42,6 +42,9 @@ model Store {
   outreachEmails          OutreachEmail[]
   samples                 Sample[]
   wholesaleQuotes         WholesaleQuote[]
+  activities              Activity[]
+  deals                   Deal[]
+  followUpSequences       FollowUpSequence[]
 
   @@map("stores")
 }
@@ -109,6 +112,90 @@ model ApiUsage {
 
   @@unique([apiName, date])
   @@map("api_usage")
+}
+
+// === Activity Timeline ===
+model Activity {
+  id        String       @id @default(uuid())
+  storeId   String       @map("store_id")
+  type      ActivityType
+  title     String
+  detail    String?
+  metadata  Json?
+  createdAt DateTime     @default(now()) @map("created_at")
+  store     Store        @relation(fields: [storeId], references: [id], onDelete: Cascade)
+
+  @@index([storeId, createdAt])
+  @@map("activities")
+}
+
+// === Deal / Revenue Tracking ===
+model Deal {
+  id               String     @id @default(uuid())
+  storeId          String     @map("store_id")
+  title            String
+  value            Decimal    @default(0)
+  status           DealStatus @default(open)
+  expectedCloseAt  DateTime?  @map("expected_close_at")
+  closedAt         DateTime?  @map("closed_at")
+  lostReason       String?    @map("lost_reason")
+  products         String[]
+  notes            String?
+  createdAt        DateTime   @default(now()) @map("created_at")
+  updatedAt        DateTime   @updatedAt @map("updated_at")
+  store            Store      @relation(fields: [storeId], references: [id], onDelete: Cascade)
+
+  @@map("deals")
+}
+
+// === Auto Follow-Up Sequences ===
+model FollowUpSequence {
+  id            String             @id @default(uuid())
+  storeId       String             @map("store_id")
+  status        SequenceStatus     @default(active)
+  currentStep   Int                @default(1) @map("current_step")
+  totalSteps    Int                @default(5) @map("total_steps")
+  nextSendAt    DateTime?          @map("next_send_at")
+  lastSentAt    DateTime?          @map("last_sent_at")
+  completedAt   DateTime?          @map("completed_at")
+  pausedAt      DateTime?          @map("paused_at")
+  category      String             @default("local_pet_store")
+  createdAt     DateTime           @default(now()) @map("created_at")
+  store         Store              @relation(fields: [storeId], references: [id], onDelete: Cascade)
+
+  @@map("follow_up_sequences")
+}
+
+enum ActivityType {
+  email_sent
+  email_replied
+  email_drafted
+  stage_changed
+  note_added
+  sample_shipped
+  sample_delivered
+  sample_feedback
+  deal_created
+  deal_won
+  deal_lost
+  contact_updated
+  store_imported
+  website_scraped
+  follow_up_scheduled
+  follow_up_sent
+}
+
+enum DealStatus {
+  open
+  won
+  lost
+}
+
+enum SequenceStatus {
+  active
+  paused
+  completed
+  cancelled
 }
 
 enum StoreSource {

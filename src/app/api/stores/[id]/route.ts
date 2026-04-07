@@ -51,6 +51,8 @@ export async function PATCH(
     "notes",
     "contactedAt",
     "nextFollowUpAt",
+    "leadType",
+    "leadTemperature",
   ];
 
   const data: Record<string, unknown> = {};

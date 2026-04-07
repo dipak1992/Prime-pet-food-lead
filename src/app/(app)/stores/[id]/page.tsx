@@ -30,6 +30,12 @@ import {
   Copy,
   Check,
   Send,
+  Clock,
+  DollarSign,
+  Play,
+  Pause,
+  Plus,
+  Activity,
 } from "lucide-react";
 import Link from "next/link";
 
@@ -78,6 +84,39 @@ interface StoreDetail {
     trackingNumber: string | null;
     createdAt: string;
   }[];
+  leadType: string | null;
+  leadTemperature: string | null;
+}
+
+interface ActivityItem {
+  id: string;
+  type: string;
+  title: string;
+  detail: string | null;
+  createdAt: string;
+}
+
+interface DealItem {
+  id: string;
+  title: string;
+  value: string;
+  status: string;
+  expectedCloseAt: string | null;
+  closedAt: string | null;
+  lostReason: string | null;
+  products: string[];
+  notes: string | null;
+  createdAt: string;
+}
+
+interface FollowUpItem {
+  id: string;
+  status: string;
+  currentStep: number;
+  totalSteps: number;
+  nextSendAt: string | null;
+  lastSentAt: string | null;
+  category: string;
 }
 
 export default function StoreDetailPage({
@@ -96,6 +135,12 @@ export default function StoreDetailPage({
   const [extracting, setExtracting] = useState(false);
   const [sendingEmailId, setSendingEmailId] = useState<string | null>(null);
   const [bulkSending, setBulkSending] = useState(false);
+  const [activities, setActivities] = useState<ActivityItem[]>([]);
+  const [deals, setDeals] = useState<DealItem[]>([]);
+  const [followUps, setFollowUps] = useState<FollowUpItem[]>([]);
+  const [startingSequence, setStartingSequence] = useState(false);
+  const [creatingDeal, setCreatingDeal] = useState(false);
+  const [newDealValue, setNewDealValue] = useState("");
 
   // Editable fields
   const [email, setEmail] = useState("");
@@ -124,6 +169,14 @@ export default function StoreDetailPage({
         );
       })
       .finally(() => setLoading(false));
+
+    // Fetch activities, deals, follow-ups in parallel
+    fetch(`/api/stores/${id}/activities`).then((r) => r.json()).then((d) => setActivities(Array.isArray(d) ? d : [])).catch(() => {});
+    fetch(`/api/stores/${id}/deals`).then((r) => r.json()).then((d) => setDeals(Array.isArray(d) ? d : [])).catch(() => {});
+    fetch("/api/follow-ups").then((r) => r.json()).then((all) => {
+      const mine = (Array.isArray(all) ? all : []).filter((s: FollowUpItem & { storeId: string }) => s.storeId === id);
+      setFollowUps(mine);
+    }).catch(() => {});
   }, [id]);
 
   async function handleSave() {
@@ -259,6 +312,86 @@ export default function StoreDetailPage({
     }
   }
 
+  async function handleStartSequence() {
+    if (!store?.email) {
+      alert("Add an email address first before starting auto follow-ups.");
+      return;
+    }
+    if (!confirm(`Start auto follow-up sequence for ${store.name}? Emails will be sent automatically over ~17 days.`)) return;
+    setStartingSequence(true);
+    try {
+      const res = await fetch("/api/follow-ups", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ storeId: id }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        alert(data.error || "Failed to start sequence");
+        return;
+      }
+      alert("Auto follow-up sequence started!");
+      // Refresh follow-ups
+      const all = await fetch("/api/follow-ups").then((r) => r.json());
+      setFollowUps((Array.isArray(all) ? all : []).filter((s: FollowUpItem & { storeId: string }) => s.storeId === id));
+    } catch {
+      alert("Failed to start sequence.");
+    } finally {
+      setStartingSequence(false);
+    }
+  }
+
+  async function handleCreateDeal() {
+    if (!newDealValue) {
+      alert("Enter a deal value.");
+      return;
+    }
+    setCreatingDeal(true);
+    try {
+      const res = await fetch(`/api/stores/${id}/deals`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title: `Wholesale Order — ${store?.name}`,
+          value: parseFloat(newDealValue),
+          products: ["Prime Yak Chews"],
+        }),
+      });
+      if (!res.ok) {
+        const data = await res.json();
+        alert(data.error || "Failed to create deal");
+        return;
+      }
+      setNewDealValue("");
+      // Refresh
+      const d = await fetch(`/api/stores/${id}/deals`).then((r) => r.json());
+      setDeals(Array.isArray(d) ? d : []);
+      const a = await fetch(`/api/stores/${id}/activities`).then((r) => r.json());
+      setActivities(Array.isArray(a) ? a : []);
+    } finally {
+      setCreatingDeal(false);
+    }
+  }
+
+  async function handleDealAction(dealId: string, status: "won" | "lost", lostReason?: string) {
+    const deal = deals.find((d) => d.id === dealId);
+    await fetch(`/api/stores/${id}/deals`, {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ dealId, status, value: deal?.value, lostReason }),
+    });
+    // Refresh
+    const [d, a, storeRes] = await Promise.all([
+      fetch(`/api/stores/${id}/deals`).then((r) => r.json()),
+      fetch(`/api/stores/${id}/activities`).then((r) => r.json()),
+      fetch(`/api/stores/${id}`).then((r) => r.json()),
+    ]);
+    setDeals(Array.isArray(d) ? d : []);
+    setActivities(Array.isArray(a) ? a : []);
+    setStore(storeRes);
+    setPipelineStage(storeRes.pipelineStage);
+  }
+
   async function handleSaveEmail(emailData: {
     subject: string;
     body: string;
@@ -333,11 +466,17 @@ export default function StoreDetailPage({
       </div>
 
       <Tabs defaultValue={defaultTab}>
-        <TabsList>
+        <TabsList className="flex-wrap">
           <TabsTrigger value="details">Details</TabsTrigger>
           <TabsTrigger value="email">Email Studio</TabsTrigger>
           <TabsTrigger value="outreach">
             Outreach ({store.outreachEmails.length})
+          </TabsTrigger>
+          <TabsTrigger value="deals">
+            Deals ({deals.length})
+          </TabsTrigger>
+          <TabsTrigger value="activity">
+            Activity
           </TabsTrigger>
         </TabsList>
 
@@ -625,6 +764,213 @@ export default function StoreDetailPage({
                       </div>
                     </div>
                   ))}
+                </div>
+              )}
+            </CardContent>
+          </Card>
+        </TabsContent>
+
+        {/* Deals Tab */}
+        <TabsContent value="deals">
+          <div className="space-y-4">
+            {/* Auto Follow-Up */}
+            <Card>
+              <CardHeader className="flex flex-row items-center justify-between">
+                <CardTitle className="text-base">Auto Follow-Up</CardTitle>
+                {followUps.filter((f) => f.status === "active" || f.status === "paused").length === 0 && (
+                  <Button
+                    size="sm"
+                    onClick={handleStartSequence}
+                    disabled={startingSequence}
+                  >
+                    {startingSequence ? (
+                      <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                    ) : (
+                      <Play className="h-4 w-4 mr-2" />
+                    )}
+                    Start Sequence
+                  </Button>
+                )}
+              </CardHeader>
+              <CardContent>
+                {followUps.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">
+                    No follow-up sequence. Click &ldquo;Start Sequence&rdquo; to auto-send a 5-step email drip.
+                  </p>
+                ) : (
+                  <div className="space-y-2">
+                    {followUps.map((seq) => (
+                      <div key={seq.id} className="flex items-center justify-between p-3 border rounded-lg">
+                        <div>
+                          <div className="flex items-center gap-2">
+                            <Badge
+                              variant={
+                                seq.status === "active" ? "success" :
+                                seq.status === "paused" ? "warning" :
+                                seq.status === "completed" ? "secondary" : "destructive"
+                              }
+                            >
+                              {seq.status}
+                            </Badge>
+                            <span className="text-sm">
+                              Step {seq.currentStep}/{seq.totalSteps}
+                            </span>
+                          </div>
+                          {seq.nextSendAt && seq.status === "active" && (
+                            <p className="text-xs text-muted-foreground mt-1 flex items-center gap-1">
+                              <Clock className="h-3 w-3" />
+                              Next send: {formatDate(seq.nextSendAt)}
+                            </p>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </CardContent>
+            </Card>
+
+            {/* Create Deal */}
+            <Card>
+              <CardHeader>
+                <CardTitle className="text-base">Create Deal</CardTitle>
+              </CardHeader>
+              <CardContent>
+                <div className="flex gap-3">
+                  <div className="relative flex-1 max-w-xs">
+                    <DollarSign className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
+                    <Input
+                      placeholder="Deal value (e.g. 500)"
+                      value={newDealValue}
+                      onChange={(e) => setNewDealValue(e.target.value)}
+                      type="number"
+                      className="pl-10"
+                    />
+                  </div>
+                  <Button onClick={handleCreateDeal} disabled={creatingDeal || !newDealValue}>
+                    {creatingDeal ? (
+                      <Loader2 className="h-4 w-4 animate-spin mr-2" />
+                    ) : (
+                      <Plus className="h-4 w-4 mr-2" />
+                    )}
+                    Create Deal
+                  </Button>
+                </div>
+              </CardContent>
+            </Card>
+
+            {/* Deals List */}
+            {deals.length > 0 && (
+              <Card>
+                <CardHeader>
+                  <CardTitle className="text-base">Deal History</CardTitle>
+                </CardHeader>
+                <CardContent>
+                  <div className="space-y-3">
+                    {deals.map((deal) => (
+                      <div key={deal.id} className="border rounded-lg p-4">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-2">
+                            <span className="font-medium text-sm">{deal.title}</span>
+                            <Badge
+                              variant={
+                                deal.status === "won" ? "success" :
+                                deal.status === "lost" ? "destructive" : "secondary"
+                              }
+                            >
+                              {deal.status}
+                            </Badge>
+                          </div>
+                          <span className="font-bold text-lg">
+                            ${Number(deal.value).toLocaleString()}
+                          </span>
+                        </div>
+                        {deal.expectedCloseAt && deal.status === "open" && (
+                          <p className="text-xs text-muted-foreground mt-1">
+                            Expected close: {formatDate(deal.expectedCloseAt)}
+                          </p>
+                        )}
+                        {deal.closedAt && (
+                          <p className="text-xs text-muted-foreground mt-1">
+                            Closed: {formatDate(deal.closedAt)}
+                          </p>
+                        )}
+                        {deal.lostReason && (
+                          <p className="text-xs text-red-600 mt-1">
+                            Reason: {deal.lostReason}
+                          </p>
+                        )}
+                        {deal.status === "open" && (
+                          <div className="flex gap-2 mt-3">
+                            <Button
+                              size="sm"
+                              variant="default"
+                              className="bg-green-600 hover:bg-green-700"
+                              onClick={() => handleDealAction(deal.id, "won")}
+                            >
+                              Mark Won
+                            </Button>
+                            <Button
+                              size="sm"
+                              variant="destructive"
+                              onClick={() => {
+                                const reason = prompt("Reason for losing this deal (optional):");
+                                handleDealAction(deal.id, "lost", reason || undefined);
+                              }}
+                            >
+                              Mark Lost
+                            </Button>
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                  </div>
+                </CardContent>
+              </Card>
+            )}
+          </div>
+        </TabsContent>
+
+        {/* Activity Timeline Tab */}
+        <TabsContent value="activity">
+          <Card>
+            <CardHeader>
+              <CardTitle className="text-base flex items-center gap-2">
+                <Activity className="h-4 w-4" />
+                Activity Timeline
+              </CardTitle>
+            </CardHeader>
+            <CardContent>
+              {activities.length === 0 ? (
+                <p className="text-sm text-muted-foreground py-4">
+                  No activity recorded yet.
+                </p>
+              ) : (
+                <div className="relative">
+                  <div className="absolute left-4 top-0 bottom-0 w-px bg-border" />
+                  <div className="space-y-4">
+                    {activities.map((activity) => (
+                      <div key={activity.id} className="relative pl-10">
+                        <div className="absolute left-2.5 top-1.5 w-3 h-3 rounded-full bg-primary border-2 border-background" />
+                        <div className="p-3 border rounded-lg">
+                          <div className="flex items-center justify-between">
+                            <p className="font-medium text-sm">{activity.title}</p>
+                            <span className="text-xs text-muted-foreground">
+                              {formatDate(activity.createdAt)}
+                            </span>
+                          </div>
+                          {activity.detail && (
+                            <p className="text-xs text-muted-foreground mt-1">
+                              {activity.detail}
+                            </p>
+                          )}
+                          <Badge variant="secondary" className="text-[10px] mt-1">
+                            {activity.type.replace(/_/g, " ")}
+                          </Badge>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
                 </div>
               )}
             </CardContent>

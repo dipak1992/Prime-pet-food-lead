@@ -12,6 +12,7 @@ import {
   Menu,
   X,
   LogOut,
+  DollarSign,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useState } from "react";
@@ -24,6 +25,7 @@ const navigation = [
   { name: "Pipeline", href: "/pipeline", icon: BarChart3 },
   { name: "Email Studio", href: "/emails", icon: Mail },
   { name: "Samples", href: "/samples", icon: Package },
+  { name: "Deals & Analytics", href: "/deals", icon: DollarSign },
   { name: "Export", href: "/export", icon: FileSpreadsheet },
 ];
 
