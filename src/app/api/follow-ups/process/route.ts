@@ -1,14 +1,106 @@
-import { NextResponse } from "next/server";
+import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { sendEmail } from "@/lib/microsoft-graph";
 
 // Step delays in days: Step 1 already sent, these are delays AFTER each step
 const STEP_DELAYS = [0, 3, 4, 3, 7]; // Step2: +3d, Step3: +4d, Step4: +3d, Step5: +7d
 
+function generateFollowUpEmail(storeName: string, location: string, step: number) {
+  const templates: Record<number, { subject: string; body: string }> = {
+    1: {
+      subject: `Wholesale Partnership — Prime Yak Chews × ${storeName}`,
+      body: `Hi ${storeName} Team,
+
+I'm reaching out from Prime Pet Food${location ? ` — we're connecting with great pet businesses in ${location}` : ""}.
+
+We make Prime Yak Chews — a premium, single-ingredient Himalayan yak cheese dog chew:
+• 100% natural, no preservatives
+• Long-lasting (2-3 hours of chew time)
+• Strong retail margins (60%+)
+• High customer repeat purchase rate
+
+Would you be open to a quick chat about wholesale pricing? I'd also be happy to send a free sample pack.
+
+Best,
+Prime Pet Food Team
+admin@theprimepetfood.com`,
+    },
+    2: {
+      subject: `Quick follow-up — Prime Yak Chews for ${storeName}`,
+      body: `Hi ${storeName} Team,
+
+Just a quick follow-up on my earlier message about Prime Yak Chews. We're a small brand making 100% natural Himalayan yak cheese dog chews, and we'd love to get our product on your shelves.
+
+If you're interested, I can send a free sample pack this week — no obligation.
+
+Let me know!
+
+Best,
+Prime Pet Food Team
+admin@theprimepetfood.com`,
+    },
+    3: {
+      subject: `Why stores love Prime Yak Chews — ${storeName}`,
+      body: `Hi ${storeName} Team,
+
+I wanted to share why independent pet stores have been loving Prime Yak Chews:
+
+1. High margins — 60%+ retail markup
+2. Repeat buyers — dogs love them, owners come back
+3. Clean label — single ingredient, easy to sell
+4. Unique product — stands out from standard treats
+
+Would love to send you samples so you can see for yourself. Can I ship some this week?
+
+Best,
+Prime Pet Food Team
+admin@theprimepetfood.com`,
+    },
+    4: {
+      subject: `Free sample pack for ${storeName} — Prime Yak Chews`,
+      body: `Hi ${storeName} Team,
+
+I'd love to send you a complimentary sample pack of Prime Yak Chews — no strings attached. It includes our best-selling sizes so you can see the quality firsthand.
+
+Just reply with your shipping address and I'll get them out this week!
+
+Best,
+Prime Pet Food Team
+admin@theprimepetfood.com`,
+    },
+    5: {
+      subject: `Last note — Prime Yak Chews × ${storeName}`,
+      body: `Hi ${storeName} Team,
+
+This is my last follow-up — I don't want to be a bother! If Prime Yak Chews aren't the right fit for your store right now, no worries at all.
+
+But if you ever want to explore a wholesale partnership, we're always here. Just reply to this email anytime.
+
+Wishing you all the best!
+
+Best,
+Prime Pet Food Team
+admin@theprimepetfood.com`,
+    },
+  };
+
+  return templates[step] || templates[1];
+}
+
 // This endpoint processes all due follow-ups
-// Call it via a cron job (e.g., Vercel Cron, or manually)
+// Called daily by Vercel Cron, or manually from the Deals page
 // GET /api/follow-ups/process
-export async function GET() {
+export async function GET(request: NextRequest) {
+  // Verify the request is from Vercel Cron or same-origin
+  const authHeader = request.headers.get("authorization");
+  const cronSecret = process.env.CRON_SECRET;
+
+  // In production, verify either Vercel cron header or CRON_SECRET
+  if (process.env.NODE_ENV === "production" && cronSecret) {
+    if (authHeader !== `Bearer ${cronSecret}`) {
+      return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+    }
+  }
   try {
     const now = new Date();
 
@@ -70,40 +162,13 @@ export async function GET() {
       }
 
       try {
-        // Generate email for current step
-        let emailRes;
-        try {
-          emailRes = await fetch(
-            `${process.env.NEXT_PUBLIC_SUPABASE_URL ? "" : "http://localhost:3000"}/api/generate-email`,
-            {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify({
-                storeName: store.name,
-                storeCity: store.city,
-                storeState: store.state,
-                storeWebsite: store.website,
-                category: seq.category,
-                sequenceStep: seq.currentStep,
-                sellsCompetitorProducts: store.sellsCompetitorProducts,
-                competitorBrands: store.competitorBrands,
-                sellsDogTreats: store.sellsDogTreats,
-              }),
-            }
-          );
-        } catch {
-          // If internal fetch fails, use a simple template
-          emailRes = null;
-        }
-
-        let subject = `Follow-up: Prime Yak Chews × ${store.name}`;
-        let body = `Hi ${store.name} Team,\n\nJust following up on my previous message about Prime Yak Chews. Would love to connect!\n\nBest,\nPrime Pet Food Team\nadmin@theprimepetfood.com`;
-
-        if (emailRes && emailRes.ok) {
-          const emailData = await emailRes.json();
-          if (emailData.subject) subject = emailData.subject;
-          if (emailData.body) body = emailData.body;
-        }
+        // Generate email based on sequence step
+        const location = [store.city, store.state].filter(Boolean).join(", ");
+        const { subject, body } = generateFollowUpEmail(
+          store.name,
+          location,
+          seq.currentStep,
+        );
 
         // Send email via Microsoft Graph
         await sendEmail({
