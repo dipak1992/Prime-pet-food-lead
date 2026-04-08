@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { searchGooglePlaces } from "@/lib/google-places";
 
 const OVERPASS_URL = "https://overpass-api.de/api/interpreter";
 
@@ -24,7 +25,6 @@ interface OverpassElement {
 }
 
 function buildOverpassQuery(city: string, state: string): string {
-  // Use nested area: find city within state boundary
   return `[out:json][timeout:30];
 area["name"="${state}"]["admin_level"="4"]->.state;
 area["name"="${city}"](area.state)->.searchArea;
@@ -53,6 +53,54 @@ area["name"="${city}"]->.searchArea;
 out body center;`;
 }
 
+async function searchOverpass(city: string, state?: string) {
+  const query = state
+    ? buildOverpassQuery(city, state)
+    : buildOverpassQueryFallback(city);
+
+  let res = await fetch(OVERPASS_URL, {
+    method: "POST",
+    headers: { "Content-Type": "application/x-www-form-urlencoded" },
+    body: `data=${encodeURIComponent(query)}`,
+  });
+
+  let data = await res.json();
+  if (state && (!data.elements || data.elements.length === 0)) {
+    const fallbackQuery = buildOverpassQueryFallback(city);
+    res = await fetch(OVERPASS_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/x-www-form-urlencoded" },
+      body: `data=${encodeURIComponent(fallbackQuery)}`,
+    });
+    data = await res.json();
+  }
+
+  if (!res.ok) return [];
+
+  return (data.elements || [])
+    .filter((el: OverpassElement) => el.tags?.name && !isChainStore(el.tags.name))
+    .map((el: OverpassElement) => {
+      const tags = el.tags || {};
+      return {
+        osmId: `${el.type}/${el.id}`,
+        name: tags.name,
+        address: [tags["addr:housenumber"], tags["addr:street"]]
+          .filter(Boolean)
+          .join(" ") || "",
+        city: tags["addr:city"] || city,
+        state: tags["addr:state"] || state || "",
+        zip: tags["addr:postcode"] || "",
+        phone: tags.phone || tags["contact:phone"] || null,
+        website: tags.website || tags["contact:website"] || null,
+        email: tags.email || tags["contact:email"] || null,
+        latitude: el.lat || el.center?.lat || null,
+        longitude: el.lon || el.center?.lon || null,
+        googleRating: null,
+        googleReviewCount: null,
+      };
+    });
+}
+
 export async function GET(request: NextRequest) {
   const searchParams = request.nextUrl.searchParams;
   const city = searchParams.get("city")?.trim();
@@ -66,63 +114,49 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    const query = state
-      ? buildOverpassQuery(city, state)
-      : buildOverpassQueryFallback(city);
+    // Search both sources in parallel
+    const [googleResults, overpassResults] = await Promise.allSettled([
+      process.env.GOOGLE_PLACES_API_KEY
+        ? searchGooglePlaces(city, state || undefined, "pet_store")
+        : Promise.resolve([]),
+      searchOverpass(city, state || undefined),
+    ]);
 
-    let res = await fetch(OVERPASS_URL, {
-      method: "POST",
-      headers: { "Content-Type": "application/x-www-form-urlencoded" },
-      body: `data=${encodeURIComponent(query)}`,
-    });
+    const google = googleResults.status === "fulfilled" ? googleResults.value : [];
+    const overpass = overpassResults.status === "fulfilled" ? overpassResults.value : [];
 
-    let data = await res.json();
-    if (state && (!data.elements || data.elements.length === 0)) {
-      const fallbackQuery = buildOverpassQueryFallback(city);
-      res = await fetch(OVERPASS_URL, {
-        method: "POST",
-        headers: { "Content-Type": "application/x-www-form-urlencoded" },
-        body: `data=${encodeURIComponent(fallbackQuery)}`,
-      });
-      data = await res.json();
+    // Merge and deduplicate by name (case-insensitive)
+    const seenNames = new Set<string>();
+    const merged = [];
+
+    // Google results first (higher quality data)
+    for (const store of google) {
+      const key = store.name.toLowerCase().trim();
+      if (!seenNames.has(key)) {
+        seenNames.add(key);
+        merged.push(store);
+      }
     }
 
-    if (!res.ok) {
-      return NextResponse.json(
-        { error: `Search API error: ${res.status}` },
-        { status: res.status }
-      );
+    // Then Overpass results (fills gaps)
+    for (const store of overpass) {
+      const key = store.name.toLowerCase().trim();
+      if (!seenNames.has(key)) {
+        seenNames.add(key);
+        merged.push(store);
+      }
     }
 
-    // Transform OSM data — only named places, exclude chain stores
-    const stores = (data.elements || [])
-      .filter((el: OverpassElement) => el.tags?.name && !isChainStore(el.tags.name))
-      .map((el: OverpassElement) => {
-        const tags = el.tags || {};
-        const lat = el.lat || el.center?.lat || null;
-        const lon = el.lon || el.center?.lon || null;
-
-        return {
-          osmId: `${el.type}/${el.id}`,
-          name: tags.name,
-          address: [tags["addr:housenumber"], tags["addr:street"]]
-            .filter(Boolean)
-            .join(" ") || "",
-          city: tags["addr:city"] || city,
-          state: tags["addr:state"] || state || "",
-          zip: tags["addr:postcode"] || "",
-          phone: tags.phone || tags["contact:phone"] || null,
-          website: tags.website || tags["contact:website"] || null,
-          email: tags.email || tags["contact:email"] || null,
-          latitude: lat,
-          longitude: lon,
-        };
-      });
+    const source = google.length > 0 && overpass.length > 0
+      ? "google+openstreetmap"
+      : google.length > 0
+        ? "google"
+        : "openstreetmap";
 
     return NextResponse.json({
-      stores,
-      count: stores.length,
-      source: "openstreetmap",
+      stores: merged,
+      count: merged.length,
+      source,
     });
   } catch (error) {
     console.error("Search error:", error);

@@ -1,10 +1,10 @@
 import { NextRequest, NextResponse } from "next/server";
 import { searchByType } from "@/services/searchAggregator";
+import { searchGooglePlaces } from "@/lib/google-places";
 import { LEAD_TYPE_OPTIONS, type LeadType } from "@/config/features";
 
-// NEW endpoint — does NOT replace /api/search
-// Handles searches for new lead types (groomers, vets, daycare, etc.)
-// pet_store type continues to use existing /api/search
+// Handles searches for all lead types except pet_store
+// Uses Google Places as primary + Overpass as fallback
 
 export async function GET(request: NextRequest) {
   const searchParams = request.nextUrl.searchParams;
@@ -23,7 +23,6 @@ export async function GET(request: NextRequest) {
     );
   }
 
-  // Verify lead type is valid and enabled
   const option = LEAD_TYPE_OPTIONS.find((o) => o.value === leadType);
   if (!option || !option.enabled) {
     return NextResponse.json(
@@ -33,13 +32,48 @@ export async function GET(request: NextRequest) {
   }
 
   try {
-    const stores = await searchByType(leadType, city, state);
+    // Search both sources in parallel
+    const [googleResults, overpassResults] = await Promise.allSettled([
+      process.env.GOOGLE_PLACES_API_KEY
+        ? searchGooglePlaces(city, state || undefined, leadType)
+        : Promise.resolve([]),
+      searchByType(leadType, city, state || undefined),
+    ]);
+
+    const google = googleResults.status === "fulfilled" ? googleResults.value : [];
+    const overpass = overpassResults.status === "fulfilled" ? overpassResults.value : [];
+
+    // Merge and deduplicate by name
+    const seenNames = new Set<string>();
+    const merged = [];
+
+    for (const store of google) {
+      const key = store.name.toLowerCase().trim();
+      if (!seenNames.has(key)) {
+        seenNames.add(key);
+        merged.push(store);
+      }
+    }
+
+    for (const store of overpass) {
+      const key = store.name.toLowerCase().trim();
+      if (!seenNames.has(key)) {
+        seenNames.add(key);
+        merged.push({ ...store, googleRating: null, googleReviewCount: null });
+      }
+    }
+
+    const source = google.length > 0 && overpass.length > 0
+      ? "google+openstreetmap"
+      : google.length > 0
+        ? "google"
+        : "openstreetmap";
 
     return NextResponse.json({
-      stores,
-      count: stores.length,
+      stores: merged,
+      count: merged.length,
       leadType,
-      source: "openstreetmap",
+      source,
     });
   } catch (error) {
     console.error(`Search error (${leadType}):`, error);

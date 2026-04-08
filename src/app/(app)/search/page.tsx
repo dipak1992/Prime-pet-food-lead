@@ -17,6 +17,7 @@ import {
   Import,
   Check,
   Mail,
+  Star,
 } from "lucide-react";
 
 interface SearchResult {
@@ -32,6 +33,8 @@ interface SearchResult {
   latitude: number | null;
   longitude: number | null;
   leadType?: string;
+  googleRating?: number | null;
+  googleReviewCount?: number | null;
 }
 
 // US states for dropdown
@@ -143,6 +146,8 @@ export default function SearchPage() {
           email: store.email,
           source: "api_search",
           leadType: store.leadType || leadType,
+          googleRating: store.googleRating || null,
+          googleReviewCount: store.googleReviewCount || null,
         }),
       });
 
@@ -313,7 +318,14 @@ export default function SearchPage() {
                       </div>
                     </div>
 
-                    <div className="flex items-center gap-4 mt-3 text-sm text-muted-foreground">
+                    <div className="flex items-center gap-4 mt-3 text-sm text-muted-foreground flex-wrap">
+                      {store.googleRating && (
+                        <span className="flex items-center gap-1 text-yellow-600">
+                          <Star className="h-3.5 w-3.5 fill-current" />
+                          {store.googleRating}
+                          {store.googleReviewCount ? ` (${store.googleReviewCount})` : ""}
+                        </span>
+                      )}
                       {store.phone && (
                         <span className="flex items-center gap-1">
                           <Phone className="h-3.5 w-3.5" />

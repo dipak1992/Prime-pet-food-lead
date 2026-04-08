@@ -68,6 +68,8 @@ export async function POST(request: NextRequest) {
       sellsDogTreats,
       source,
       leadType,
+      googleRating,
+      googleReviewCount,
     } = body;
 
     if (!name) {
@@ -104,6 +106,7 @@ export async function POST(request: NextRequest) {
       sellsCompetitorProducts: false,
       email,
       website,
+      googleRating: googleRating || null,
     });
 
     // Calculate AI lead score if enabled (new layer — does not replace relevanceScore)
