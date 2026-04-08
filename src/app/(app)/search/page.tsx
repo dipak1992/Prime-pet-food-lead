@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useState, useCallback } from "react";
 import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -73,10 +73,46 @@ export default function SearchPage() {
   const [csvDialogOpen, setCsvDialogOpen] = useState(false);
   const [importedIds, setImportedIds] = useState<Set<string>>(new Set());
   const [importing, setImporting] = useState<string | null>(null);
+  // Cross-type duplicate detection: osmIds of stores already in DB
+  const [existingIds, setExistingIds] = useState<Set<string>>(new Set());
+  const [existingInfo, setExistingInfo] = useState<
+    Record<string, { leadType: string | null; pipelineStage: string }>
+  >({});
 
   function hasContactInfo(store: SearchResult): boolean {
     return !!(store.phone || store.email || store.website);
   }
+
+  // Check search results against existing stores in DB (any lead type)
+  const checkDuplicates = useCallback(async (stores: SearchResult[]) => {
+    if (stores.length === 0) return;
+    try {
+      const pairs = stores.map((s) => ({ name: s.name, city: s.city }));
+      const res = await fetch("/api/stores/check-duplicates", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ pairs }),
+      });
+      if (!res.ok) return;
+      const data = await res.json();
+      const dupIds = new Set<string>();
+      const info: Record<string, { leadType: string | null; pipelineStage: string }> = {};
+      for (const dup of data.duplicates || []) {
+        const store = stores[dup.index];
+        if (store) {
+          dupIds.add(store.osmId);
+          info[store.osmId] = {
+            leadType: dup.leadType,
+            pipelineStage: dup.pipelineStage,
+          };
+        }
+      }
+      setExistingIds(dupIds);
+      setExistingInfo(info);
+    } catch {
+      // Silently fail — dedup is a nice-to-have, not critical
+    }
+  }, []);
 
   async function handleSearch(e: React.FormEvent) {
     e.preventDefault();
@@ -84,6 +120,8 @@ export default function SearchPage() {
     setLoading(true);
     setError("");
     setResults([]);
+    setExistingIds(new Set());
+    setExistingInfo({});
 
     try {
       const stateName = state ? (STATE_NAMES[state] || state) : undefined;
@@ -100,6 +138,7 @@ export default function SearchPage() {
         } else {
           const stores = (data.stores || []).map((s: SearchResult) => ({ ...s, leadType: "pet_store" }));
           setResults(stores);
+          checkDuplicates(stores);
           if (stores.length === 0) {
             setError(
               `No independent pet stores found in ${city}${state ? `, ${state}` : ""}. Try a larger city or add stores manually.`
@@ -116,8 +155,10 @@ export default function SearchPage() {
         if (data.error) {
           setError(data.error);
         } else {
-          setResults(data.stores || []);
-          if (data.stores?.length === 0) {
+          const stores = data.stores || [];
+          setResults(stores);
+          checkDuplicates(stores);
+          if (stores.length === 0) {
             const typeLabel = LEAD_TYPE_LABELS[leadType] || leadType;
             setError(
               `No ${typeLabel.toLowerCase()}s found in ${city}${state ? `, ${state}` : ""}. Try a larger city or different lead type.`
@@ -178,7 +219,7 @@ export default function SearchPage() {
 
   async function handleImportAll() {
     for (const store of results) {
-      if (!importedIds.has(store.osmId) && hasContactInfo(store)) {
+      if (!importedIds.has(store.osmId) && !existingIds.has(store.osmId) && hasContactInfo(store)) {
         await handleImport(store);
       }
     }
@@ -284,33 +325,53 @@ export default function SearchPage() {
             <p className="text-sm text-muted-foreground">
               Found {results.length} {LEAD_TYPE_LABELS[leadType]?.toLowerCase() || "result"}{results.length !== 1 ? "s" : ""}{" "}
               in {city}{state ? `, ${state}` : ""}
+              {existingIds.size > 0 && (
+                <span className="text-yellow-600 ml-1">
+                  ({existingIds.size} already in pipeline)
+                </span>
+              )}
             </p>
             <Button
               variant="outline"
               size="sm"
               onClick={handleImportAll}
-              disabled={results.every((s) => importedIds.has(s.osmId))}
+              disabled={results.every(
+                (s) => importedIds.has(s.osmId) || existingIds.has(s.osmId) || !hasContactInfo(s)
+              )}
             >
               <Import className="h-4 w-4 mr-2" />
-              Import All
+              Import New
             </Button>
           </div>
 
           <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
             {results.map((store) => {
               const isImported = importedIds.has(store.osmId);
+              const isExisting = existingIds.has(store.osmId);
               const isImporting = importing === store.osmId;
               const canImport = hasContactInfo(store);
+              const existingMeta = existingInfo[store.osmId];
               return (
-                <Card key={store.osmId} className="hover:shadow-md transition-shadow">
+                <Card
+                  key={store.osmId}
+                  className={`transition-shadow ${isExisting ? "opacity-75 border-yellow-300" : "hover:shadow-md"}`}
+                >
                   <CardContent className="p-5">
                     <div className="flex items-start justify-between">
                       <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-2 flex-wrap">
                           <h3 className="font-semibold truncate">{store.name}</h3>
                           {store.leadType && store.leadType !== "pet_store" && (
                             <Badge variant="secondary" className="text-[10px] shrink-0">
                               {LEAD_TYPE_LABELS[store.leadType as LeadType] || store.leadType}
+                            </Badge>
+                          )}
+                          {isExisting && (
+                            <Badge variant="outline" className="text-[10px] shrink-0 border-yellow-500 text-yellow-700 bg-yellow-50">
+                              Already in Pipeline
+                              {existingMeta?.leadType && existingMeta.leadType !== (store.leadType || leadType)
+                                ? ` (as ${LEAD_TYPE_LABELS[existingMeta.leadType as LeadType] || existingMeta.leadType})`
+                                : ""}
                             </Badge>
                           )}
                         </div>
@@ -361,7 +422,17 @@ export default function SearchPage() {
                     </div>
 
                     <div className="mt-4">
-                      {canImport ? (
+                      {isExisting && !isImported ? (
+                        <Button
+                          size="sm"
+                          variant="secondary"
+                          disabled
+                          className="w-full"
+                        >
+                          <Check className="h-4 w-4 mr-2 text-yellow-600" />
+                          Already in Pipeline
+                        </Button>
+                      ) : canImport ? (
                         <Button
                           size="sm"
                           variant={isImported ? "secondary" : "default"}
