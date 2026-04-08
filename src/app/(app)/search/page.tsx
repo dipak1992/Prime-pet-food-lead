@@ -5,6 +5,7 @@ import { Card, CardContent, CardHeader, CardTitle, CardDescription } from "@/com
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { AddStoreDialog, type StoreFormData } from "@/components/add-store-dialog";
+import { CsvImportDialog } from "@/components/csv-import-dialog";
 import { Badge } from "@/components/ui/badge";
 import { LEAD_TYPE_OPTIONS, LEAD_TYPE_LABELS, type LeadType } from "@/config/features";
 import {
@@ -18,6 +19,7 @@ import {
   Check,
   Mail,
   Star,
+  FileSpreadsheet,
 } from "lucide-react";
 
 interface SearchResult {
@@ -68,6 +70,7 @@ export default function SearchPage() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [addDialogOpen, setAddDialogOpen] = useState(false);
+  const [csvDialogOpen, setCsvDialogOpen] = useState(false);
   const [importedIds, setImportedIds] = useState<Set<string>>(new Set());
   const [importing, setImporting] = useState<string | null>(null);
 
@@ -203,10 +206,16 @@ export default function SearchPage() {
             Search pet businesses by city &amp; state (excludes major chains)
           </p>
         </div>
-        <Button variant="outline" onClick={() => setAddDialogOpen(true)}>
-          <Plus className="h-4 w-4 mr-2" />
-          Add Manually
-        </Button>
+        <div className="flex gap-2">
+          <Button variant="outline" onClick={() => setCsvDialogOpen(true)}>
+            <FileSpreadsheet className="h-4 w-4 mr-2" />
+            CSV Import
+          </Button>
+          <Button variant="outline" onClick={() => setAddDialogOpen(true)}>
+            <Plus className="h-4 w-4 mr-2" />
+            Add Manually
+          </Button>
+        </div>
       </div>
 
       {/* Search Form */}
@@ -395,6 +404,11 @@ export default function SearchPage() {
         open={addDialogOpen}
         onOpenChange={setAddDialogOpen}
         onSubmit={handleManualAdd}
+      />
+
+      <CsvImportDialog
+        open={csvDialogOpen}
+        onOpenChange={setCsvDialogOpen}
       />
     </div>
   );
