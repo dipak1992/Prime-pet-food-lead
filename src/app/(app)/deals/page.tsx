@@ -19,6 +19,7 @@ import {
   Square,
   Send,
   Loader2,
+  Mail,
 } from "lucide-react";
 import Link from "next/link";
 
@@ -78,6 +79,7 @@ export default function DealsPage() {
   const [followUps, setFollowUps] = useState<FollowUpSequence[]>([]);
   const [loading, setLoading] = useState(true);
   const [processing, setProcessing] = useState(false);
+  const [checkingReplies, setCheckingReplies] = useState(false);
   const [actioningId, setActioningId] = useState<string | null>(null);
 
   useEffect(() => {
@@ -109,6 +111,26 @@ export default function DealsPage() {
       alert("Failed to process follow-ups");
     } finally {
       setProcessing(false);
+    }
+  }
+
+  async function checkReplies() {
+    setCheckingReplies(true);
+    try {
+      const res = await fetch("/api/replies/process");
+      const data = await res.json();
+      if (!res.ok) {
+        alert(`Reply check failed: ${data.error}`);
+        return;
+      }
+      alert(`Checked ${data.checked} store emails. Found ${data.repliesFound} new replies!`);
+      // Refresh analytics
+      const a = await fetch("/api/analytics").then((r) => r.json());
+      setAnalytics(a);
+    } catch {
+      alert("Failed to check replies");
+    } finally {
+      setCheckingReplies(false);
     }
   }
 
@@ -386,8 +408,16 @@ export default function DealsPage() {
 
       {/* Email Performance */}
       <Card>
-        <CardHeader>
+        <CardHeader className="flex flex-row items-center justify-between">
           <CardTitle>Email Performance</CardTitle>
+          <Button size="sm" variant="outline" onClick={checkReplies} disabled={checkingReplies}>
+            {checkingReplies ? (
+              <Loader2 className="h-4 w-4 animate-spin mr-2" />
+            ) : (
+              <Mail className="h-4 w-4 mr-2" />
+            )}
+            Check Replies
+          </Button>
         </CardHeader>
         <CardContent>
           <div className="flex flex-wrap gap-4">
