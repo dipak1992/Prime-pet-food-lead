@@ -1,52 +1,14 @@
-// Microsoft Graph API — send email via M365
-// Uses OAuth2 client credentials flow (app-only, no user sign-in)
+// Email sending via Resend
+// Replies go to admin@theprimepetfood.com
+// Unsubscribe footer included automatically
 
-interface GraphTokenResponse {
-  access_token: string;
-  expires_in: number;
-  token_type: string;
-}
+import { Resend } from "resend";
 
-let cachedToken: { token: string; expiresAt: number } | null = null;
+const resend = new Resend(process.env.RESEND_API_KEY);
 
-async function getAccessToken(): Promise<string> {
-  // Return cached token if still valid (with 60s buffer)
-  if (cachedToken && Date.now() < cachedToken.expiresAt - 60_000) {
-    return cachedToken.token;
-  }
-
-  const tenantId = process.env.MS_TENANT_ID!;
-  const clientId = process.env.MS_CLIENT_ID!;
-  const clientSecret = process.env.MS_CLIENT_SECRET!;
-
-  const url = `https://login.microsoftonline.com/${tenantId}/oauth2/v2.0/token`;
-
-  const body = new URLSearchParams({
-    client_id: clientId,
-    client_secret: clientSecret,
-    scope: "https://graph.microsoft.com/.default",
-    grant_type: "client_credentials",
-  });
-
-  const res = await fetch(url, {
-    method: "POST",
-    headers: { "Content-Type": "application/x-www-form-urlencoded" },
-    body: body.toString(),
-  });
-
-  if (!res.ok) {
-    const error = await res.text();
-    throw new Error(`Failed to get Microsoft Graph token: ${error}`);
-  }
-
-  const data: GraphTokenResponse = await res.json();
-  cachedToken = {
-    token: data.access_token,
-    expiresAt: Date.now() + data.expires_in * 1000,
-  };
-
-  return data.access_token;
-}
+const FROM_NAME = "Dipak — Prime Pet Food";
+const FROM_EMAIL = process.env.RESEND_FROM_EMAIL || "outreach@theprimepetfood.com";
+const REPLY_TO = "admin@theprimepetfood.com";
 
 interface SendEmailOptions {
   to: string;
@@ -56,42 +18,40 @@ interface SendEmailOptions {
   html?: boolean;
 }
 
+// Unsubscribe footer appended to every outreach email
+function addUnsubscribeFooter(body: string, recipientEmail: string): string {
+  const unsubLine = `\n\n---\nIf you don't want to receive these emails, reply with "unsubscribe" or email ${REPLY_TO} with subject "Unsubscribe".`;
+  return body + unsubLine;
+}
+
+function textToHtml(text: string): string {
+  return text
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/\n/g, "<br>")
+    .replace(/(https?:\/\/[^\s<]+)/g, '<a href="$1">$1</a>');
+}
+
 export async function sendEmail({ to, subject, body, html = false }: SendEmailOptions) {
-  const token = await getAccessToken();
-  const senderEmail = process.env.MS_SENDER_EMAIL!;
+  const bodyWithFooter = addUnsubscribeFooter(body, to);
 
-  const url = `https://graph.microsoft.com/v1.0/users/${senderEmail}/sendMail`;
-
-  const message = {
-    message: {
-      subject,
-      body: {
-        contentType: html ? "HTML" : "Text",
-        content: body,
-      },
-      toRecipients: [
-        {
-          emailAddress: { address: to },
-        },
-      ],
-    },
-    saveToSentItems: true,
-  };
-
-  const res = await fetch(url, {
-    method: "POST",
-    headers: {
-      Authorization: `Bearer ${token}`,
-      "Content-Type": "application/json",
-    },
-    body: JSON.stringify(message),
+  const { data, error } = await resend.emails.send({
+    from: `${FROM_NAME} <${FROM_EMAIL}>`,
+    to: [to],
+    replyTo: REPLY_TO,
+    subject,
+    ...(html
+      ? { html: bodyWithFooter }
+      : {
+          text: bodyWithFooter,
+          html: textToHtml(bodyWithFooter),
+        }),
   });
 
-  if (!res.ok) {
-    const error = await res.text();
-    throw new Error(`Microsoft Graph sendMail failed: ${res.status} — ${error}`);
+  if (error) {
+    throw new Error(`Resend sendEmail failed: ${error.message}`);
   }
 
-  // 202 Accepted = success (no response body)
-  return { success: true };
+  return { success: true, id: data?.id };
 }
