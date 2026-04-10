@@ -201,16 +201,15 @@ export default function IntentLeadsPage() {
       {noBingKey && (
         <Card className="border-orange-200 bg-orange-50">
           <CardContent className="p-4 space-y-2">
-            <p className="font-medium text-orange-800">Bing Search API key not configured</p>
+            <p className="font-medium text-orange-800">Search API key not configured</p>
             <p className="text-sm text-orange-700">
-              To enable high-intent lead search, add your Bing Search API key:
+              This feature uses <strong>Serper.dev</strong> (Google Search API) — free 2,500 query trial, no credit card needed.
             </p>
             <ol className="text-sm text-orange-700 list-decimal list-inside space-y-1">
-              <li>Go to <strong>portal.azure.com</strong> → Create resource → <strong>Bing Search v7</strong></li>
-              <li>Create a free-tier resource (1,000 queries/month free)</li>
-              <li>Copy the API key from Keys and Endpoint</li>
-              <li>Add to Vercel env vars: <code className="bg-orange-100 px-1 rounded">BING_SEARCH_API_KEY=your_key</code></li>
-              <li>Redeploy</li>
+              <li>Go to <strong>serper.dev</strong> and create a free account</li>
+              <li>Copy your API key from the dashboard</li>
+              <li>Add to Vercel env vars: <code className="bg-orange-100 px-1 rounded font-mono">SERPER_API_KEY=your_key</code></li>
+              <li>Redeploy (or add locally to <code className="bg-orange-100 px-1 rounded font-mono">.env</code>)</li>
             </ol>
           </CardContent>
         </Card>

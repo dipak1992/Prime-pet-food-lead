@@ -19,7 +19,7 @@ export async function GET(request: NextRequest) {
     return NextResponse.json({ error: "No valid types specified" }, { status: 400 });
   }
 
-  const hasBingKey = !!process.env.BING_SEARCH_API_KEY;
+  const hasBingKey = !!process.env.SERPER_API_KEY;
 
   try {
     const leads = await getIntentLeads(filteredTypes);

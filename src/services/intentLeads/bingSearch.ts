@@ -1,49 +1,58 @@
-// Bing Web Search API v7 wrapper
-// Free tier: 1,000 queries/month
-// Key: BING_SEARCH_API_KEY env var
+// Serper.dev — Google Search API
+// Free: 2,500 queries (one-time trial)
+// Paid: ~$50/5,000 queries (months of usage for small teams)
+// Sign up: https://serper.dev
+// Env var: SERPER_API_KEY
 
-const BING_ENDPOINT = "https://api.bing.microsoft.com/v7.0/search";
+const SERPER_ENDPOINT = "https://google.serper.dev/search";
 
-export interface BingResult {
+export interface SearchResult {
   name: string;
   url: string;
   snippet: string;
   displayUrl: string;
 }
 
-export async function bingSearch(
+export async function webSearch(
   query: string,
   count = 10
-): Promise<BingResult[]> {
-  const key = process.env.BING_SEARCH_API_KEY;
+): Promise<SearchResult[]> {
+  const key = process.env.SERPER_API_KEY;
   if (!key) return [];
 
   try {
-    const params = new URLSearchParams({
-      q: query,
-      count: String(Math.min(count, 50)),
-      mkt: "en-US",
-      responseFilter: "Webpages",
-      safeSearch: "Off",
-    });
-
-    const res = await fetch(`${BING_ENDPOINT}?${params}`, {
-      headers: { "Ocp-Apim-Subscription-Key": key },
+    const res = await fetch(SERPER_ENDPOINT, {
+      method: "POST",
+      headers: {
+        "X-API-KEY": key,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ q: query, num: Math.min(count, 10) }),
       next: { revalidate: 3600 }, // cache 1hr to preserve quota
     });
 
     if (!res.ok) {
-      console.error(`Bing search failed: ${res.status} ${res.statusText}`);
+      console.error(`Serper search failed: ${res.status} ${res.statusText}`);
       return [];
     }
 
     const data = await res.json();
-    return (data.webPages?.value as BingResult[]) || [];
+    const organic = data.organic || [];
+
+    return organic.map((r: { title: string; link: string; snippet: string }) => ({
+      name: r.title || "",
+      url: r.link || "",
+      snippet: r.snippet || "",
+      displayUrl: r.link || "",
+    }));
   } catch (err) {
-    console.error("Bing search error:", err);
+    console.error("Web search error:", err);
     return [];
   }
 }
+
+// Keep bingSearch as an alias so existing imports don't break
+export const bingSearch = webSearch;
 
 // Extract email addresses visible in a snippet
 export function extractEmailFromSnippet(snippet: string): string | null {
@@ -70,25 +79,10 @@ export function extractDomain(url: string): string {
 
 // Domains to always exclude (retailers, social platforms, aggregators)
 export const EXCLUDE_DOMAINS = [
-  "amazon",
-  "etsy",
-  "ebay",
-  "walmart",
-  "chewy",
-  "petco",
-  "petsmart",
-  "target",
-  "reddit",
-  "youtube",
-  "facebook",
-  "instagram",
-  "twitter",
-  "linkedin",
-  "yelp",
-  "google",
-  "bing",
-  "wikipedia",
-  "pinterest",
+  "amazon", "etsy", "ebay", "walmart", "chewy",
+  "petco", "petsmart", "target", "reddit", "youtube",
+  "facebook", "instagram", "twitter", "linkedin",
+  "yelp", "google", "bing", "wikipedia", "pinterest",
 ];
 
 export function isExcludedDomain(url: string): boolean {
