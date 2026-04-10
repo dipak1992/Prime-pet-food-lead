@@ -13,6 +13,7 @@ import {
   X,
   LogOut,
   DollarSign,
+  Zap,
 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import { useState } from "react";
@@ -22,6 +23,7 @@ import { useRouter } from "next/navigation";
 const navigation = [
   { name: "Dashboard", href: "/", icon: LayoutDashboard },
   { name: "Find Leads", href: "/search", icon: Search },
+  { name: "High-Intent Leads", href: "/intent-leads", icon: Zap },
   { name: "Pipeline", href: "/pipeline", icon: BarChart3 },
   { name: "Email Studio", href: "/emails", icon: Mail },
   { name: "Samples", href: "/samples", icon: Package },

@@ -29,6 +29,7 @@ model Store {
   competitorBrands        String[]         @map("competitor_brands")
   relevanceScore          Int?             @map("relevance_score")
   leadType                String?          @map("lead_type")
+  intentLevel             String?          @map("intent_level")
   leadScore               Int?             @map("lead_score")
   leadTemperature         String?          @map("lead_temperature")
   source                  StoreSource      @default(manual)
@@ -202,6 +203,7 @@ enum StoreSource {
   api_search
   manual
   csv_import
+  bing_search
 }
 
 enum PipelineStage {

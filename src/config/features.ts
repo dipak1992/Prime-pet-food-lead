@@ -16,6 +16,11 @@ export const FEATURES = {
   // Multi-channel outreach
   ENABLE_INSTAGRAM_DM: true,
   ENABLE_CONTACT_FORM: true,
+
+  // High-intent leads (Tier 2 — requires BING_SEARCH_API_KEY)
+  ENABLE_INTENT_LEADS: true,
+  ENABLE_DISTRIBUTORS: true,
+  ENABLE_RESELLERS: true,
 } as const;
 
 export type LeadType =
