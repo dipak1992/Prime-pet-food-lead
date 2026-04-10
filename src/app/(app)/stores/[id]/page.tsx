@@ -648,6 +648,7 @@ export default function StoreDetailPage({
             storeCity={store.city}
             storeState={store.state}
             storeWebsite={store.website}
+            leadType={store.leadType}
             sellsCompetitorProducts={store.sellsCompetitorProducts}
             competitorBrands={store.competitorBrands}
             sellsDogTreats={store.sellsDogTreats}

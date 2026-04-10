@@ -15,6 +15,7 @@ interface StoreWithEmails {
   state: string | null;
   email: string | null;
   website: string | null;
+  leadType: string | null;
   sellsCompetitorProducts: boolean;
   competitorBrands: string[];
   sellsDogTreats: boolean | null;
@@ -126,6 +127,7 @@ export default function EmailsPage() {
               storeCity={selectedStore.city}
               storeState={selectedStore.state}
               storeWebsite={selectedStore.website}
+              leadType={selectedStore.leadType}
               sellsCompetitorProducts={selectedStore.sellsCompetitorProducts}
               competitorBrands={selectedStore.competitorBrands}
               sellsDogTreats={selectedStore.sellsDogTreats}
